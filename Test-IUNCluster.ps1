@@ -217,6 +217,9 @@ if ($argoSharedNs.Code -eq 0 -and $argoSharedNs.Output) {
 # ---------------------------------------------------------------------------
 Add-Section "Operators socle (sur les 11 cibles)"
 
+# Patterns appliqués UNIQUEMENT sur la colonne NAME du CSV (pas sur le namespace),
+# sinon faux positifs sur cluster partagé (ex: namespace `cert-manager-operator`
+# matche le pattern `cert-manager` même quand le CSV n'est pas présent).
 $socleCheck = @(
     @{ Name = 'OpenShift Pipelines';      Pattern = 'openshift-pipelines-operator-rh' },
     @{ Name = 'OpenShift Service Mesh 3'; Pattern = 'servicemeshoperator3' },
@@ -225,20 +228,37 @@ $socleCheck = @(
     @{ Name = 'AMQ Streams';              Pattern = 'amqstreams' },
     @{ Name = 'OpenShift Logging';        Pattern = 'cluster-logging' },
     @{ Name = 'OpenShift Data Foundation';Pattern = 'odf-operator' },
-    @{ Name = 'cert-manager';             Pattern = 'cert-manager' },
-    @{ Name = 'External Secrets';         Pattern = 'external-secrets' },
-    @{ Name = 'RHACS';                    Pattern = 'rhacs-operator' }
+    @{ Name = 'cert-manager';             Pattern = 'cert-manager-operator|^cert-manager\.v' },
+    @{ Name = 'External Secrets';         Pattern = 'external-secrets-operator|^external-secrets\.v' },
+    @{ Name = 'RHACS';                    Pattern = 'rhacs-operator|advanced-cluster-security' }
 )
 
-$csvAll = Invoke-OcQuiet -OcArgs @('get','csv','-A','-o','custom-columns=NS:.metadata.namespace,NAME:.metadata.name,PHASE:.status.phase','--no-headers')
+# Approche B : on parse `oc get csv -A` en jsonpath pour matcher proprement la
+# colonne NAME. Format de chaque ligne : "<namespace>\t<csv-name>\t<phase>".
+$csvJp  = '{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.status.phase}{"\n"}{end}'
+$csvAll = Invoke-OcQuiet -OcArgs @('get','csv','-A','-o',"jsonpath=$csvJp")
 if ($csvAll.Code -eq 0) {
+    $csvLines = $csvAll.Output -split "`n" |
+        Where-Object { $_ -and (($_ -split "`t").Count -ge 2) }
+
     foreach ($op in $socleCheck) {
-        $hit = $csvAll.Output -split "`n" | Where-Object { $_ -match $op.Pattern } | Select-Object -First 1
+        $hit = $csvLines |
+            Where-Object {
+                $cols = $_ -split "`t"
+                $cols[1] -match $op.Pattern
+            } |
+            Select-Object -First 1
+
         if ($hit) {
-            $status = if ($hit -match 'Succeeded') { 'OK' } else { 'WARN' }
-            Add-Check $op.Name $status $hit.Trim()
+            $cols   = $hit -split "`t"
+            $ns     = $cols[0]
+            $name   = $cols[1]
+            $phase  = if ($cols.Count -ge 3) { $cols[2] } else { '' }
+            $detail = "$name ($ns) — $phase"
+            $status = if ($phase -eq 'Succeeded') { 'OK' } else { 'WARN' }
+            Add-Check $op.Name $status $detail
         } else {
-            Add-Check $op.Name "INFO" "non installé (sera déployé par GitOps)"
+            Add-Check $op.Name "INFO" "non installé"
         }
     }
 } else {

@@ -66,7 +66,7 @@ if (-not (Get-Command oc -ErrorAction SilentlyContinue)) {
     exit 2
 }
 $flags = Get-OcFlags
-$null  = & oc @flags whoami 2>&1
+$null  = & oc whoami @flags 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Aucune session oc. Lance d'abord :  oc login <server> --insecure-skip-tls-verify=true"
     exit 3
@@ -77,7 +77,7 @@ $RouteName = "$ArgoName-server"
 $SecretName = "$ArgoName-cluster"
 
 Write-Host "Recherche Route $RouteName dans $Namespace ..." -ForegroundColor Cyan
-$RouteHost = & oc @flags get route $RouteName -n $Namespace -o jsonpath='{.spec.host}' 2>&1
+$RouteHost = & oc get @flags route $RouteName -n $Namespace -o jsonpath='{.spec.host}' 2>&1
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($RouteHost)) {
     Write-Error "Route $RouteName introuvable dans $Namespace (Operator pas encore prêt, ou mauvais ArgoName)."
     exit 10
@@ -89,7 +89,7 @@ Write-Host $Url -ForegroundColor Green
 
 # Mot de passe admin initial
 Write-Host "Recherche Secret $SecretName.data.admin.password ..." -ForegroundColor Cyan
-$b64 = & oc @flags get secret $SecretName -n $Namespace -o jsonpath='{.data.admin\.password}' 2>&1
+$b64 = & oc get @flags secret $SecretName -n $Namespace -o jsonpath='{.data.admin\.password}' 2>&1
 
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($b64)) {
     Write-Warning "Secret $SecretName ou clé admin.password introuvable."

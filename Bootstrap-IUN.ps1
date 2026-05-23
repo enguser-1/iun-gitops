@@ -141,7 +141,10 @@ function Invoke-Oc {
         [Parameter(Mandatory)] [string[]] $OcArgs,
         [switch] $AllowFailure
     )
-    $full = @('oc') + (Get-OcFlags) + $OcArgs
+    # oc 4.16 refuse les flags globaux placés avant le sous-commande pour
+    # certaines combinaisons (erreur "flags cannot be placed before plugin name: -").
+    # On place donc systématiquement les flags --insecure-skip-tls-verify=true en FIN.
+    $full = @('oc') + $OcArgs + (Get-OcFlags)
     $cmd  = ($full -join ' ')
 
     if ($DryRun) {
@@ -225,6 +228,7 @@ Write-Log "oc trouvé : $(Get-Command oc | Select-Object -ExpandProperty Source)
 
 # 2) oc whoami
 $flags  = Get-OcFlags
+# oc 4.16 : @flags doit venir APRES le sous-commande complet (cf. Invoke-Oc).
 $whoami = & oc whoami @flags 2>&1
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($whoami)) {
     Write-Log "Pas de session oc active. Exécute d'abord :" -Level ERROR
@@ -234,7 +238,7 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($whoami)) {
 Write-Log "Utilisateur authentifié : $whoami" -Level OK
 
 # 3) serveur réellement utilisé
-$currentServer = & oc whoami @flags --show-server 2>&1
+$currentServer = & oc whoami --show-server @flags 2>&1
 if ($LASTEXITCODE -eq 0) {
     Write-Log "Server actif   : $currentServer"
     if ($currentServer.Trim() -ne $Server.Trim()) {
@@ -243,7 +247,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 # 4) version OCP
-$verJson = & oc version @flags -o json 2>&1
+$verJson = & oc version -o json @flags 2>&1
 if ($LASTEXITCODE -eq 0) {
     try {
         $ver = ($verJson | ConvertFrom-Json).openshiftVersion
@@ -254,7 +258,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 # 5) cluster-admin requis (l'instance dédiée + ClusterRoleBinding l'exigent)
-$canClusterAdmin = & oc auth @flags can-i '*' '*' --all-namespaces 2>&1
+$canClusterAdmin = & oc auth can-i '*' '*' --all-namespaces @flags 2>&1
 if ($LASTEXITCODE -ne 0 -or $canClusterAdmin.Trim().ToLower() -ne 'yes') {
     Write-Log "cluster-admin requis pour créer l'instance ArgoCD dédiée + ClusterRoleBinding." -Level ERROR
     Write-Log "Réponse 'oc auth can-i * * --all-namespaces' = $canClusterAdmin" -Level ERROR
@@ -263,7 +267,7 @@ if ($LASTEXITCODE -ne 0 -or $canClusterAdmin.Trim().ToLower() -ne 'yes') {
 Write-Log "Privilèges     : cluster-admin (OK)" -Level OK
 
 # 6) OpenShift GitOps Operator déjà installé ?
-$csvCheck = & oc get @flags csv -n openshift-operators -o name 2>&1
+$csvCheck = & oc get csv -n openshift-operators -o name @flags 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Log "Impossible d'inventorier les CSVs : $csvCheck" -Level ERROR
     exit 5
@@ -424,8 +428,8 @@ Write-Log "Pour récupérer l'URL et le mot de passe admin Argo CD, exécute :" 
 Write-Log "    .\Get-ArgoCD-Admin.ps1   # défauts adaptés à l'instance iun-argocd / iun-gitops" -Level INFO
 Write-Log "Ou en commandes brutes :" -Level INFO
 $flagStr = (Get-OcFlags) -join ' '
-Write-Log ("    oc $flagStr get route $ArgoName-server -n $ArgoNamespace -o jsonpath='{`"https://`"}{.spec.host}{`"\n`"}'") -Level INFO
-Write-Log ("    oc $flagStr get secret $ArgoName-cluster -n $ArgoNamespace -o jsonpath='{.data.admin\.password}' | %% { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(`$_)) }") -Level INFO
+Write-Log ("    oc get route $ArgoName-server -n $ArgoNamespace -o jsonpath='{`"https://`"}{.spec.host}{`"\n`"}' $flagStr") -Level INFO
+Write-Log ("    oc get secret $ArgoName-cluster -n $ArgoNamespace -o jsonpath='{.data.admin\.password}' $flagStr | %% { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(`$_)) }") -Level INFO
 
 if ($DryRun) {
     Write-Log "Dry-run : récap des Applications ignoré." -Level DRYRUN
