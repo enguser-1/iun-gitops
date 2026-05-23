@@ -1,0 +1,119 @@
+# ============================================================================
+# Bootstrap step 1 : Instance Argo CD dédiée IUN (Option B)
+# ============================================================================
+#
+# CR `ArgoCD` (CRD fourni par l'OpenShift GitOps Operator déjà installé).
+# Une instance dédiée par programme permet :
+#   - une RBAC indépendante de l'instance cluster-wide ;
+#   - une cadence de mise à jour propre (versions Argo CD, plugins) ;
+#   - un cycle de vie aligné sur le programme IUN.
+#
+# La spec ci-dessous est volontairement minimale pour le PoC. Les sections
+# commentées indiquent les durcissements à appliquer pour la prod.
+# ============================================================================
+---
+apiVersion: argoproj.io/v1beta1
+kind: ArgoCD
+metadata:
+  name: iun-argocd
+  namespace: iun-gitops
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+spec:
+  # --- Server / Route ------------------------------------------------------
+  server:
+    route:
+      enabled: true
+      tls:
+        termination: reencrypt
+        insecureEdgeTerminationPolicy: Redirect
+    insecure: false
+    autoscale:
+      enabled: false
+    replicas: 1
+
+  # --- RBAC ----------------------------------------------------------------
+  # PoC : tous les cluster-admins OCP ont le rôle `admin` dans Argo CD.
+  # TODO Hardening : remplacer par un mapping fin OIDC -> rôles Argo CD
+  # une fois Keycloak (RHBK) provisionné.
+  rbac:
+    defaultPolicy: ''
+    policy: |
+      g, system:cluster-admins, role:admin
+      g, cluster-admins, role:admin
+    scopes: '[groups]'
+
+  # --- SSO -----------------------------------------------------------------
+  # SSO désactivé pour le PoC. À activer (OIDC) quand Keycloak sera up :
+  #   sso:
+  #     provider: keycloak
+  #     keycloak:
+  #       rootCA: ""  # CA du Keycloak IUN
+  # (Cf. dette technique : "SSO Argo CD" dans le README §Hardening.)
+
+  # --- Resource inclusions / exclusions par défaut OCP --------------------
+  # Évite que Argo CD ne tente de reconcilier des resources internes OCP
+  # (cluster operators, BMC, etc.). Valeurs alignées avec l'OpenShift GitOps
+  # Operator par défaut (voir doc Red Hat).
+  resourceExclusions: |
+    - apiGroups:
+        - tekton.dev
+      kinds:
+        - TaskRun
+        - PipelineRun
+      clusters:
+        - "*"
+    - apiGroups:
+        - ""
+      kinds:
+        - Endpoints
+        - EndpointSlice
+      clusters:
+        - "*"
+
+  # --- Repo / ApplicationSet / Controller ---------------------------------
+  repo:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  controller:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+    # Pour la prod : sharder le controller (>1 cluster cible).
+    # sharding:
+    #   enabled: true
+    #   replicas: 3
+
+  # --- HA -----------------------------------------------------------------
+  # PoC : HA désactivée (Redis et controller en single replica).
+  ha:
+    enabled: false
+  # Production (à activer après PoC) :
+  # ha:
+  #   enabled: true
+  #   redisProxyImage: registry.redhat.io/openshift-gitops-1/argocd-rhel8
+
+  # --- Notifications / Dex / Prometheus ----------------------------------
+  notifications:
+    enabled: false
+  dex:
+    openShiftOAuth: false  # PoC : on bypasse OAuth OCP, admin local Argo CD
+  prometheus:
+    enabled: true
+    route:
+      enabled: false
+
+  # --- Apps in any namespace ----------------------------------------------
+  # On garde les Applications dans le seul namespace `iun-gitops` pour l'instant.
+  # sourceNamespaces:
+  #   - iun-gitops

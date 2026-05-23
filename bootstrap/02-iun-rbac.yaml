@@ -1,0 +1,56 @@
+# ============================================================================
+# Bootstrap step 2 : RBAC cluster pour l'instance Argo CD IUN
+# ============================================================================
+#
+# Le SA `iun-argocd-argocd-application-controller` (créé par l'Operator quand
+# il instancie le CR ArgoCD `iun-argocd`) a besoin d'écrire des Subscriptions
+# OLM, des OperatorGroups, des Namespaces, des ClusterRoles, etc. — donc des
+# resources cluster-scoped.
+#
+# Pour le PoC, on lui accorde `cluster-admin` afin de débloquer le bootstrap
+# des 11 Operators socle sans s'enliser dans le tuning RBAC.
+#
+# TODO Hardening — remplacer par ClusterRole fine-grained post-PoC :
+#   - lister précisément les apiGroups/resources nécessaires (operators.coreos.com,
+#     rbac.authorization.k8s.io, "" core ns/sa, monitoring.coreos.com, …)
+#   - construire un ClusterRole IUN `iun-argocd-platform` dédié et le binder
+#     à la place de cluster-admin.
+#   Cf. dette technique §"Hardening post-PoC" du README.
+# ============================================================================
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: iun-argocd-application-controller-cluster-admin
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    app.kubernetes.io/managed-by: openshift-gitops-operator
+  annotations:
+    # TODO: remplacer par un ClusterRole `iun-argocd-platform` fine-grained.
+    iun.platform/tech-debt: "cluster-admin SA — à durcir post-PoC"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: iun-argocd-argocd-application-controller
+    namespace: iun-gitops
+---
+# Le server Argo CD a aussi besoin de lister les resources cluster-scoped
+# pour afficher l'arbre dans la UI ; on lui accorde au minimum `view` cluster.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: iun-argocd-server-view
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    app.kubernetes.io/managed-by: openshift-gitops-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: iun-argocd-argocd-server
+    namespace: iun-gitops

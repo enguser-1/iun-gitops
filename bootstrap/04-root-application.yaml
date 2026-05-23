@@ -1,26 +1,33 @@
-# Root Application (pattern "app-of-apps")
+# ============================================================================
+# Bootstrap step 4 : Root Application (pattern "app-of-apps")
+# ============================================================================
 # Cette Application pointe sur un overlay d'environnement (par défaut : dev)
 # qui agrège toutes les Applications enfants (socle + applicatifs).
 #
-# Pour staging/prod, dupliquer ce fichier en ajustant source.path et metadata.name.
+# Hébergé dans l'instance Argo CD dédiée `iun-argocd` (namespace `iun-gitops`).
+#
+# Pour staging/prod, dupliquer ce fichier en ajustant source.path et
+# metadata.name (iun-root-staging / iun-root-prod).
+# ============================================================================
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: iun-root-dev
-  namespace: openshift-gitops
+  namespace: iun-gitops
+  labels:
+    app.kubernetes.io/part-of: iun-platform
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: iun-platform
   source:
-    # À remplacer par l'URL Git effective une fois le remote configuré
     repoURL: https://github.com/enguser-1/iun-gitops.git
     targetRevision: HEAD
     path: environments/dev
   destination:
     server: https://kubernetes.default.svc
-    namespace: openshift-gitops
+    namespace: iun-gitops
   syncPolicy:
     automated:
       prune: true
@@ -34,5 +41,3 @@ spec:
         duration: 10s
         factor: 2
         maxDuration: 5m
-
-

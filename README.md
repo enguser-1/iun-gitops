@@ -6,55 +6,66 @@ Cible : OpenShift Container Platform 4.16, déploiement déclaratif des 11 Opera
 
 ---
 
+## 0. Architecture : instance Argo CD dédiée IUN (Option B)
+
+**Décision** : le programme IUN provisionne sa **propre instance Argo CD** dans le namespace `iun-gitops`, **distincte** de l'instance partagée par défaut (`openshift-gitops`) déployée par l'OpenShift GitOps Operator cluster-wide.
+
+```
+                +-----------------------------------------------+
+                |  Cluster OCP 4.16 (api.origins.heritage.africa)|
+                +-----------------------------------------------+
+                |                                               |
+                |  openshift-operators                          |
+                |    +- openshift-gitops-operator (cluster-wide)|
+                |         (déjà installé, non géré par ce repo) |
+                |                                               |
+                |  openshift-gitops   (instance par défaut —    |
+                |    +- argocd        plateforme partagée OCP,  |
+                |                     hors scope IUN)           |
+                |                                               |
+                |  iun-gitops         (instance dédiée IUN)     |
+                |    +- iun-argocd  <-- ce repo                 |
+                |         +- AppProject iun-platform            |
+                |         +- Root Application iun-root-dev      |
+                |         +- 11 Applications socle              |
+                |                                               |
+                +-----------------------------------------------+
+```
+
+### Pourquoi une instance dédiée ?
+
+- **Isolation RBAC** : les administrateurs IUN n'ont pas à toucher à l'instance Argo CD cluster (utilisée par d'autres équipes / SRE OCP).
+- **Cycle de vie indépendant** : on peut mettre à jour la version Argo CD, ses plugins, ses notifications, sans coordination cross-équipes.
+- **Périmètre clair** : un seul `AppProject` (`iun-platform`), un seul Git source repo, un namespace d'admin (`iun-gitops`) — tout est traçable côté audit.
+- **Souveraineté** : facilite la migration future vers un Git on-prem (GitLab souverain, Gitea) sans impacter d'autres équipes.
+
+### Pourquoi pas l'instance partagée (Option A — rejetée) ?
+
+- Risque de collision de noms / projects avec d'autres équipes.
+- RBAC commun à gérer transversalement (lent).
+- Couplage upgrade : impossible de figer une version Argo CD pour stabilité IUN sans bloquer les autres.
+
+---
+
 ## 1. Arborescence
 
 ```
 gitops/
-├── bootstrap/                  Manifests d'amorçage (à appliquer une seule fois, hors Argo CD)
-│   ├── 01-openshift-gitops-subscription.yaml   Installe l'Operator Argo CD
-│   ├── 02-root-app-project.yaml                AppProject "iun-platform"
-│   ├── 03-root-application.yaml                Root Application (app-of-apps)
+├── bootstrap/
+│   ├── 00-iun-gitops-namespace.yaml    Namespace iun-gitops
+│   ├── 01-iun-argocd.yaml              CR ArgoCD iun-argocd (instance dédiée)
+│   ├── 02-iun-rbac.yaml                ClusterRoleBindings pour le SA controller
+│   ├── 03-root-app-project.yaml        AppProject iun-platform
+│   ├── 04-root-application.yaml        Root Application (app-of-apps)
 │   └── kustomization.yaml
 │
-├── apps/                       Applications Argo CD (un fichier = un chantier)
-│   ├── socle/                  Les 11 Operators socle
-│   │   ├── 01-openshift-gitops.yaml
-│   │   ├── 02-openshift-pipelines.yaml
-│   │   ├── 03-openshift-servicemesh.yaml
-│   │   ├── 04-rhbk.yaml                        (Red Hat Build of Keycloak)
-│   │   ├── 05-cloudnative-pg.yaml
-│   │   ├── 06-amq-streams.yaml
-│   │   ├── 07-openshift-logging.yaml
-│   │   ├── 08-openshift-data-foundation.yaml
-│   │   ├── 09-cert-manager.yaml
-│   │   ├── 10-external-secrets.yaml
-│   │   ├── 11-rhacs.yaml
-│   │   └── kustomization.yaml
-│   └── iun-api/                Applicatif métier IUN (placeholder phase 2)
-│       └── README.md
+├── apps/socle/                Les 11 Operators socle — toutes dans ns iun-gitops
+│   ├── 01-openshift-gitops.yaml … 11-rhacs.yaml
+│   └── kustomization.yaml
 │
-├── components/                 Bases Kustomize réutilisables (un dossier = un Operator)
-│   ├── openshift-gitops/base/
-│   ├── openshift-pipelines/base/
-│   ├── openshift-servicemesh/base/
-│   ├── rhbk/base/
-│   ├── cloudnative-pg/base/
-│   ├── amq-streams/base/
-│   ├── openshift-logging/base/
-│   ├── openshift-data-foundation/base/
-│   ├── cert-manager/base/
-│   ├── external-secrets/base/
-│   └── rhacs/base/
-│       Chaque base contient typiquement :
-│         - namespace.yaml         (si namespace dédié)
-│         - operatorgroup.yaml     (si namespace dédié)
-│         - subscription.yaml      (Subscription OLM)
-│         - kustomization.yaml
+├── components/<op>/base/      Subscription + OperatorGroup + Namespace par Operator
 │
-├── environments/               Overlays par environnement (Argo CD pointe sur ces dossiers)
-│   ├── dev/kustomization.yaml
-│   ├── staging/kustomization.yaml
-│   └── prod/kustomization.yaml
+├── environments/{dev,staging,prod}/kustomization.yaml
 │
 ├── .gitignore
 └── README.md
@@ -63,140 +74,138 @@ gitops/
 ### Pattern de déploiement
 
 ```
-   Root Application (bootstrap/03-root-application.yaml)
-              │
-              ▼  source.path = environments/dev
+   bootstrap/04-root-application.yaml  (Root Application "iun-root-dev")
+              |   namespace: iun-gitops   (instance dédiée)
+              v   source.path = environments/dev
    environments/dev/kustomization.yaml
-              │
-              ▼  resources += ../../apps/socle
-   apps/socle/*.yaml              (11 Applications)
-              │
-              ▼  chacune source.path = components/<op>/base
+              |
+              v   resources += ../../apps/socle
+   apps/socle/*.yaml              (11 Applications, toutes dans ns iun-gitops)
+              |
+              v   chacune source.path = components/<op>/base
    components/<op>/base/*.yaml    (Subscription + OperatorGroup + Namespace)
 ```
 
 ---
 
-## 2. Operators socle (les 11 du §4 du rapport)
+## 2. Operators socle
 
-| # | Operator                              | Namespace                  | Channel        | Source             |
-|---|---------------------------------------|----------------------------|----------------|--------------------|
-| 1 | OpenShift GitOps (Argo CD)            | `openshift-operators`      | `latest`       | redhat-operators   |
-| 2 | OpenShift Pipelines (Tekton)          | `openshift-operators`      | `latest`       | redhat-operators   |
-| 3 | OpenShift Service Mesh 3              | `openshift-operators`      | `stable`       | redhat-operators   |
-| 4 | Red Hat Build of Keycloak             | `rhbk-operator`            | `stable-v26`   | redhat-operators   |
-| 5 | CloudNativePG                         | `cnpg-system`              | `stable-v1.24` | community-operators|
-| 6 | AMQ Streams (Kafka)                   | `amq-streams`              | `stable`       | redhat-operators   |
-| 7 | OpenShift Logging (Loki + Vector)     | `openshift-logging` + `openshift-operators-redhat` | `stable-6.0` | redhat-operators |
-| 8 | OpenShift Data Foundation             | `openshift-storage`        | `stable-4.16`  | redhat-operators   |
-| 9 | cert-manager                          | `cert-manager-operator`    | `stable-v1`    | redhat-operators   |
-| 10| External Secrets Operator             | `external-secrets-operator`| `stable`       | community-operators|
-| 11| Red Hat Advanced Cluster Security     | `rhacs-operator`           | `stable`       | redhat-operators   |
+| #  | Operator                          | Namespace cible            | Channel        | Source              |
+|----|-----------------------------------|----------------------------|----------------|---------------------|
+| 1  | OpenShift GitOps (Argo CD)        | openshift-operators        | latest         | redhat-operators    |
+| 2  | OpenShift Pipelines (Tekton)      | openshift-operators        | latest         | redhat-operators    |
+| 3  | OpenShift Service Mesh 3          | openshift-operators        | stable         | redhat-operators    |
+| 4  | Red Hat Build of Keycloak         | rhbk-operator              | stable-v26     | redhat-operators    |
+| 5  | CloudNativePG                     | cnpg-system                | stable-v1.24   | community-operators |
+| 6  | AMQ Streams (Kafka)               | amq-streams                | stable         | redhat-operators    |
+| 7  | OpenShift Logging (Loki + Vector) | openshift-logging          | stable-6.0     | redhat-operators    |
+| 8  | OpenShift Data Foundation         | openshift-storage          | stable-4.16    | redhat-operators    |
+| 9  | cert-manager                      | cert-manager-operator      | stable-v1      | redhat-operators    |
+| 10 | External Secrets Operator         | external-secrets-operator  | stable         | community-operators |
+| 11 | Red Hat Advanced Cluster Security | rhacs-operator             | stable         | redhat-operators    |
 
-> Les `channel` sont indicatifs et à vérifier au moment du déploiement via `oc get packagemanifest <name> -n openshift-marketplace -o jsonpath='{.status.channels[*].name}'`.
+> Toutes les **Applications Argo CD** (`apps/socle/*.yaml`) vivent dans `iun-gitops`. Leurs `destination.namespace` ci-dessus restent les namespaces OLM cibles de chaque Operator.
 
 ---
 
 ## 3. Commandes PowerShell
 
-> **Pré-requis poste de travail Windows** : `git`, `oc` (OpenShift CLI 4.16+) et un `kubeconfig` valide pointant sur le cluster cible (`$env:KUBECONFIG`).
+> **Pré-requis Windows** : `git`, `oc` 4.16+, kubeconfig pointant sur `https://api.origins.heritage.africa:6443`.
+>
+> **⚠ Certificat API expiré sur ce cluster.** Toutes les commandes `oc` ci-dessous incluent `--insecure-skip-tls-verify=true`. Alternative : faire `oc login --insecure-skip-tls-verify=true …` une fois — la session courante mémorise le flag (`~/.kube/config`). Renouvellement du cert API tracé en §5 "Hardening post-PoC".
 
-### (a) Initialiser Git localement
+### (a) Préchecks — Operator déjà installé
+
+```powershell
+$ApiUrl    = "https://api.origins.heritage.africa:6443"
+$TlsBypass = "--insecure-skip-tls-verify=true"
+
+# Login (le flag est mémorisé pour la session courante)
+oc login $ApiUrl $TlsBypass -u <user>
+
+# 1. Confirmer que l'OpenShift GitOps Operator est déjà installé cluster-wide
+oc get csv -A $TlsBypass | Select-String "openshift-gitops-operator"
+oc get crd argocds.argoproj.io $TlsBypass
+oc get crd applications.argoproj.io $TlsBypass
+
+# 2. Vérifier qu'aucune instance ArgoCD `iun-argocd` n'existe déjà
+oc get argocd -A $TlsBypass | Select-String "iun-argocd"
+# (résultat attendu : aucune ligne)
+```
+
+### (b) Bootstrap de l'instance Argo CD IUN
 
 ```powershell
 Set-Location C:\IUN_APP\gitops
-git init -b main
-git add .
-git commit -m "chore(gitops): scaffold socle plateforme IUN"
-```
 
-### (b) Ajouter le remote quand l'URL sera connue
+# Appliquer le bundle bootstrap (Namespace + ArgoCD CR + RBAC + AppProject + Root App)
+oc apply -k bootstrap/ $TlsBypass
 
-```powershell
-# Remplacer <URL_GIT> par l'URL effective (GitLab on-prem, Bitbucket, Gitea souverain, etc.)
-$RepoUrl = "https://git.example.sn/iun/gitops.git"
+# Attendre que l'Operator ait provisionné l'instance
+oc wait --for=jsonpath='{.status.phase}'=Available `
+  argocd/iun-argocd -n iun-gitops --timeout=300s $TlsBypass
 
-git remote add origin $RepoUrl
-git push -u origin main
-
-# Mettre à jour tous les repoURL dans les manifests (replace en bloc)
-Get-ChildItem -Path C:\IUN_APP\gitops -Recurse -Filter *.yaml |
-  ForEach-Object {
-    (Get-Content $_.FullName -Raw) `
-      -replace 'https://CHANGE-ME\.example\.com/iun/gitops\.git', $RepoUrl |
-      Set-Content -NoNewline -Encoding UTF8 $_.FullName
-  }
-
-git add .
-git commit -m "chore(gitops): set real repoURL"
-git push
-```
-
-### (c) Bootstrap Argo CD sur le cluster
-
-```powershell
-# Se connecter au cluster (adapter URL et credentials)
-oc login https://api.cluster.example.sn:6443
-
-# 1) Installer l'Operator OpenShift GitOps
-oc apply -f C:\IUN_APP\gitops\bootstrap\01-openshift-gitops-subscription.yaml
-
-# 2) Attendre que le CRD Application soit prêt (peut prendre 2-3 min)
-oc wait --for=condition=Established crd/applications.argoproj.io --timeout=300s
-
-# 3) Attendre que le namespace openshift-gitops et l'instance ArgoCD par défaut soient prêts
+# Attendre les deployments clés
 oc wait --for=condition=Available --timeout=300s `
-  deployment/openshift-gitops-server -n openshift-gitops
+  deployment/iun-argocd-server -n iun-gitops $TlsBypass
+oc wait --for=condition=Available --timeout=300s `
+  deployment/iun-argocd-repo-server -n iun-gitops $TlsBypass
+```
 
-# 4) Créer l'AppProject puis la Root Application (app-of-apps)
-oc apply -f C:\IUN_APP\gitops\bootstrap\02-root-app-project.yaml
-oc apply -f C:\IUN_APP\gitops\bootstrap\03-root-application.yaml
+### (c) Récupérer URL UI + mot de passe admin
 
-# (Astuce : récupérer le mot de passe admin Argo CD)
-$ArgoPwd = oc get secret openshift-gitops-cluster -n openshift-gitops `
-  -o jsonpath='{.data.admin\.password}' | ForEach-Object { `
-    [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($_)) }
+```powershell
+$ArgoUrl = oc get route iun-argocd-server -n iun-gitops $TlsBypass `
+  -o jsonpath='{"https://"}{.spec.host}'
+Write-Host "Argo CD UI: $ArgoUrl"
+
+$ArgoPwd = oc get secret iun-argocd-cluster -n iun-gitops $TlsBypass `
+  -o jsonpath='{.data.admin\.password}' |
+  ForEach-Object {
+    [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($_))
+  }
 Write-Host "Argo CD admin password: $ArgoPwd"
-
-# (Astuce : récupérer la Route)
-oc get route openshift-gitops-server -n openshift-gitops `
-  -o jsonpath='{"https://"}{.spec.host}{"\n"}'
 ```
 
 ### (d) Vérifier la synchronisation
 
 ```powershell
-# Liste des Applications et leur état
-oc get applications -n openshift-gitops
+# Liste des Applications et leur état (dans iun-gitops)
+oc get applications -n iun-gitops $TlsBypass
 
-# Détail d'une Application (ici le socle Service Mesh)
-oc describe application socle-openshift-servicemesh -n openshift-gitops
+# Détail d'une Application
+oc describe application socle-openshift-servicemesh -n iun-gitops $TlsBypass
 
-# État des Subscriptions OLM (toutes les installations d'Operators)
-oc get subscriptions -A
+# État des Subscriptions OLM
+oc get subscriptions -A $TlsBypass
 
-# État de l'install : CSV (ClusterServiceVersion) doit passer en "Succeeded"
-oc get csv -A | Select-String -NotMatch "Succeeded"
+# État de l'install : CSV doit passer en "Succeeded"
+oc get csv -A $TlsBypass | Select-String -NotMatch "Succeeded"
 
-# Forcer un refresh / sync manuel d'une Application
-oc annotate application socle-cloudnative-pg -n openshift-gitops `
-  argocd.argoproj.io/refresh=hard --overwrite
+# Forcer un refresh / sync manuel
+oc annotate application socle-cloudnative-pg -n iun-gitops `
+  argocd.argoproj.io/refresh=hard --overwrite $TlsBypass
 
-# Vue d'ensemble santé : doit afficher Healthy / Synced pour les 11
-oc get applications -n openshift-gitops `
+# Vue d'ensemble santé
+oc get applications -n iun-gitops $TlsBypass `
   -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status
 ```
 
 ### (e) Promouvoir vers staging / prod
 
 ```powershell
-# Dupliquer la Root Application en pointant sur l'overlay cible
-Copy-Item C:\IUN_APP\gitops\bootstrap\03-root-application.yaml `
-          C:\IUN_APP\gitops\bootstrap\03-root-application-prod.yaml
+Copy-Item C:\IUN_APP\gitops\bootstrap\04-root-application.yaml `
+          C:\IUN_APP\gitops\bootstrap\04-root-application-prod.yaml
+# Éditer : metadata.name -> iun-root-prod, source.path -> environments/prod
+oc apply -f C:\IUN_APP\gitops\bootstrap\04-root-application-prod.yaml $TlsBypass
+```
 
-# Éditer le fichier : metadata.name -> iun-root-prod, source.path -> environments/prod
-# Puis :
-oc apply -f C:\IUN_APP\gitops\bootstrap\03-root-application-prod.yaml
+### (f) Rollback complet de l'instance IUN
+
+```powershell
+oc delete application iun-root-dev -n iun-gitops $TlsBypass
+oc delete argocd iun-argocd       -n iun-gitops $TlsBypass
+oc delete namespace iun-gitops    $TlsBypass
 ```
 
 ---
@@ -206,24 +215,40 @@ oc apply -f C:\IUN_APP\gitops\bootstrap\03-root-application-prod.yaml
 - **Une Subscription par fichier** dans `components/<op>/base/subscription.yaml`.
 - **Un seul AppProject** (`iun-platform`) à ce stade ; segmenter par BU quand l'équipe scalera.
 - **Pas de Secrets en clair dans Git** : tout passe par External Secrets Operator + Vault, ou Sealed Secrets en transition.
-- **`installPlanApproval: Automatic`** en dev/staging, à basculer en `Manual` pour prod (cf. patch d'exemple dans `environments/prod/kustomization.yaml`).
-- **Les `repoURL: https://CHANGE-ME.example.com/iun/gitops.git`** sont des placeholders ; ils doivent être remplacés par l'URL Git réelle avant le premier `oc apply` (cf. §3.b).
+- **`installPlanApproval: Automatic`** en dev/staging, à basculer en `Manual` pour prod.
+- **Toutes les Applications Argo CD** vivent dans `iun-gitops` (`metadata.namespace`). Leurs `destination.namespace` restent les namespaces OLM cibles.
 
 ---
 
-## 5. Phase 2 (hors scope de ce scaffold)
+## 5. Hardening post-PoC (dette technique connue)
+
+À traiter après validation fonctionnelle du PoC, avant bascule staging/prod :
+
+| # | Item                                  | Description                                                                                                                                            | Priorité |
+|---|---------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|----------|
+| 1 | Cert API serveur OCP expiré           | Renouveler le cert de `api.origins.heritage.africa:6443` pour supprimer `--insecure-skip-tls-verify=true`. Procédure `oc adm` côté SRE.                | Haute    |
+| 2 | SA controller = cluster-admin         | Remplacer le CRB cluster-admin (`bootstrap/02-iun-rbac.yaml`) par un ClusterRole fine-grained `iun-argocd-platform` (operators.coreos.com, rbac, …).   | Haute    |
+| 3 | SSO Argo CD désactivé                 | Activer OIDC sur Keycloak (RHBK) une fois Keycloak provisionné ; retirer le rôle local admin mappé aux `system:cluster-admins`.                        | Moyenne  |
+| 4 | HA Argo CD désactivée                 | `spec.ha.enabled: true` sur le CR `iun-argocd` (Redis cluster, controller sharding). Coût ~3x mémoire.                                                | Moyenne  |
+| 5 | sourceRepos restreint                 | Déjà restreint à `https://github.com/enguser-1/iun-gitops*`. À durcir encore après migration vers Git on-prem.                                         | Basse    |
+| 6 | installPlanApproval Automatic         | Basculer en `Manual` pour prod (patch overlay `environments/prod/`).                                                                                  | Basse    |
+| 7 | Pipeline de validation Kustomize      | Tekton job `kustomize build environments/dev \| oc apply --dry-run=server -f -` sur chaque PR.                                                         | Basse    |
+
+---
+
+## 6. Phase 2 (hors scope)
 
 - Compléter `apps/iun-api/` avec l'Application déployant l'API .NET conteneurisée.
-- Ajouter les `Cluster`, `Kafka`, `Keycloak`, `StorageCluster` (CR des Operators) une fois les Operators `Succeeded`.
-- Ajouter Operators phase 2 du rapport §4 : Cluster Observability, OpenTelemetry, Tempo, Compliance, OADP, KEDA, Serverless.
-- Implémenter sync-waves Argo CD (annotation `argocd.argoproj.io/sync-wave`) pour ordonner Operators → CRs → applicatifs.
-- Ajouter un pipeline Tekton de validation Kustomize (`kustomize build environments/dev | oc apply --dry-run=server -f -`).
+- Ajouter les CR métier (Cluster CNPG, Kafka, Keycloak, StorageCluster) une fois les Operators Succeeded.
+- Operators phase 2 : Cluster Observability, OpenTelemetry, Tempo, Compliance, OADP, KEDA, Serverless.
+- Sync-waves Argo CD (annotation `argocd.argoproj.io/sync-wave`) pour ordonner Operators -> CRs -> applicatifs.
 
 ---
 
-## 6. Références
+## 7. Références
 
 - `..\EVALUATION_OPENSHIFT_v4.16.md` — §4 liste exhaustive des Operators recommandés.
 - `..\SYNTHESE_ET_PLAN_DEMARRAGE_v1.md` — feuille de route programme.
 - [Argo CD app-of-apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/)
-- [OpenShift GitOps documentation](https://docs.openshift.com/gitops/)
+- [OpenShift GitOps — Multiple Argo CD instances](https://docs.openshift.com/gitops/latest/argocd_instance/setting-up-argocd-instance.html)
+- [ArgoCD CRD (argoproj.io/v1beta1)](https://argocd-operator.readthedocs.io/en/latest/reference/argocd/)

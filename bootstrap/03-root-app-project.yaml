@@ -1,0 +1,31 @@
+# ============================================================================
+# Bootstrap step 3 : AppProject "iun-platform"
+# ============================================================================
+# Périmètre de toutes les Applications Argo CD du programme IUN.
+# Hébergé dans l'instance Argo CD dédiée `iun-argocd` (namespace `iun-gitops`).
+# ============================================================================
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: iun-platform
+  namespace: iun-gitops
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+spec:
+  description: Plateforme IUN Sénégal — socle et applicatifs
+  sourceRepos:
+    - https://github.com/enguser-1/iun-gitops
+    - https://github.com/enguser-1/iun-gitops.git
+    - https://github.com/enguser-1/iun-gitops/*
+  destinations:
+    - namespace: "*"
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  orphanedResources:
+    warn: true

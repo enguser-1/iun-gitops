@@ -1,0 +1,34 @@
+# ============================================================================
+# Bootstrap step 0 : Namespace dédié pour l'instance Argo CD IUN
+# ============================================================================
+#
+# PRÉREQUIS — NE PAS GÉRER ICI :
+#   L'OpenShift GitOps Operator est déjà installé cluster-wide sur ce cluster
+#   (Subscription `openshift-gitops-operator` dans `openshift-operators`).
+#   Vérification PowerShell avant bootstrap :
+#       oc get csv -A | Select-String gitops
+#       oc get crd argocds.argoproj.io
+#
+# Ce manifeste se contente de créer le namespace `iun-gitops` qui hébergera
+# l'instance Argo CD dédiée au programme IUN (Option B — instance dédiée,
+# pas de réutilisation de l'instance partagée `openshift-gitops`).
+#
+# Le label `argocd.argoproj.io/managed-by` désigne l'instance Argo CD qui pilote
+# ce namespace : ici, auto-référence pour que l'instance IUN se gère elle-même
+# (et puisse y créer les Applications du root app-of-apps).
+# ============================================================================
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: iun-gitops
+  labels:
+    # Convention OCP GitOps : namespace géré par l'instance Argo CD `iun-argocd`
+    argocd.argoproj.io/managed-by: iun-gitops
+    app.kubernetes.io/part-of: iun-platform
+    app.kubernetes.io/managed-by: openshift-gitops-operator
+    # Permettre au monitoring cluster de scraper les métriques Argo CD
+    openshift.io/cluster-monitoring: "true"
+  annotations:
+    openshift.io/description: "Instance Argo CD dédiée au programme IUN Sénégal (Option B)"
+    openshift.io/display-name: "IUN GitOps"
