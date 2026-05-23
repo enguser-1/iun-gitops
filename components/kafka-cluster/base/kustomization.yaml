@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Placeholder — Cluster Kafka IUN via AMQ Streams.
+# AMQ Streams Operator déjà installé sur le cluster (autre équipe).
+# À remplir phase 2 :
+#   - namespace.yaml             (iun-streaming)
+#   - kafka.yaml                 (kind: Kafka, kafka.strimzi.io/v1beta2)
+#   - topics/*.yaml              (KafkaTopic par flux métier)
+#   - users/*.yaml               (KafkaUser SCRAM/mTLS)
+resources: []

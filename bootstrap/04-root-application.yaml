@@ -1,13 +1,19 @@
 # ============================================================================
-# Bootstrap step 4 : Root Application (pattern "app-of-apps")
+# Bootstrap step 4 : Root Application (pattern "app-of-apps")  — Approche B
 # ============================================================================
-# Cette Application pointe sur un overlay d'environnement (par défaut : dev)
-# qui agrège toutes les Applications enfants (socle + applicatifs).
+# Choix de chaînage (Approche B, 2026-05-23) :
+#   Root Application  --> environments/<env>/  --> apps/iun/  --> (futures Apps)
+#
+# La Root pointe sur l'overlay env (environments/dev par défaut) et NON
+# directement sur apps/iun, pour conserver la capacité d'overlay Kustomize
+# par environnement (replicas, patches, etc.).
+#
+# Bootstrap-IUN.ps1 patche dynamiquement metadata.name et source.path en
+# remplaçant `environments/dev` par `environments/<env>` selon -Environment.
 #
 # Hébergé dans l'instance Argo CD dédiée `iun-argocd` (namespace `iun-gitops`).
-#
-# Pour staging/prod, dupliquer ce fichier en ajustant source.path et
-# metadata.name (iun-root-staging / iun-root-prod).
+# Ne gère QUE les ressources IUN-spécifiques — les Operators socle sont
+# prérequis externes (cf. README §0).
 # ============================================================================
 ---
 apiVersion: argoproj.io/v1alpha1

@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# ============================================================================
+# apps/iun — Applications Argo CD IUN-spécifiques (Approche B)
+# ============================================================================
+# Sur ce cluster partagé (OCP 4.16.29, api.origins.heritage.africa), 9 des 11
+# Operators socle sont déjà installés par d'autres équipes (cf. README §0).
+# Argo CD IUN ne gère donc PAS de Subscriptions Operators ici : on ne touche
+# pas à ce que les autres tenants ont déjà provisionné.
+#
+# Ce dossier accueillera les `Application` Argo CD qui déploient uniquement
+# les ressources IUN-spécifiques (à venir en phase 2) :
+#   - keycloak-realm : Realm KeycloakRealm IUN (via RHBK déjà installé)
+#   - cnpg-cluster   : Cluster PostgreSQL IUN (via CNPG déjà installé)
+#   - kafka-cluster  : Cluster Kafka IUN (via AMQ Streams déjà installé)
+#   - iun-api        : Deployment + Service + Route de l'API .NET
+#
+# À ce stade : liste vide. Les Applications seront ajoutées au fur et à mesure
+# que les composants IUN sont conteneurisés et prêts à être déployés.
+# ============================================================================
+resources: []

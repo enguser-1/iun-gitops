@@ -3,4 +3,26 @@ kind: Kustomization
 # ============================================================================
 # Bootstrap IUN — instance Argo CD dédiée (Option B)
 # ============================================================================
-# Prérequis : OpenShift GitOps Operator déjà installé cluster-wide
+# Prérequis : OpenShift GitOps Operator déjà installé cluster-wide.
+#
+# Ordre logique (Kustomize applique en lot, mais cet ordre reflète la
+# dépendance fonctionnelle) :
+#   00 → Namespace `iun-gitops`
+#   01 → CR ArgoCD `iun-argocd` (l'Operator crée alors les Deployments,
+#        Services, Routes, SA, Roles, Secrets…)
+#   02 → ClusterRoleBindings (cluster-admin sur le SA controller — PoC)
+#   03 → AppProject `iun-platform`
+#   04 → Root Application `iun-root-dev` (app-of-apps)
+#
+# Commande d'application :
+#   oc apply -k bootstrap/
+#
+# Voir README §"Bootstrap Argo CD" pour les détails et précautions
+# (cert API expiré : passer `--insecure-skip-tls-verify=true` aux commandes oc).
+# ============================================================================
+resources:
+  - 00-iun-gitops-namespace.yaml
+  - 01-iun-argocd.yaml
+  - 02-iun-rbac.yaml
+  - 03-root-app-project.yaml
+  - 04-root-application.yaml

@@ -16,3 +16,7 @@ secret*.yaml
 # Kubeconfigs locaux
 kubeconfig
 *.kubeconfig
+
+# Runtime logs from bootstrap/precheck scripts
+.logs/
+

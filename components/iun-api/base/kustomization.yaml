@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Placeholder — composant IUN API (.NET).
+# À remplir en phase 2 quand l'image sera buildée :
+#   - namespace.yaml          (iun-api)
+#   - deployment.yaml         (image quay.../iun-api:tag)
+#   - service.yaml
+#   - route.yaml
+#   - servicemonitor.yaml     (Prometheus scrape)
+resources: []

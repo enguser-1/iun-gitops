@@ -1,18 +1,18 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# Overlay dev : agrège toutes les Applications du socle telles quelles.
-# Ajouter ici des patches (channels en preview, replicas réduits, etc.) si besoin.
-namespace: openshift-gitops
+# Overlay dev (Approche B) : agrège uniquement les Applications IUN-spécifiques.
+# Les Operators socle sont prérequis externes (déjà installés par d'autres équipes
+# sur ce cluster partagé) — ils ne sont pas gérés par notre Argo CD.
+namespace: iun-gitops
 resources:
-  - ../../apps/socle
-# Exemple de patch pour rétrograder la sub OpenShift Pipelines en canal "preview" :
+  - ../../apps/iun
+# Exemple de patch dev (replicas réduits) à ajouter quand des Applications seront
+# présentes dans apps/iun :
 # patches:
 #   - target:
-#       kind: Subscription
-#       name: openshift-pipelines-operator-rh
+#       kind: Cluster
+#       name: iun-postgres
 #     patch: |-
 #       - op: replace
-#         path: /spec/channel
-#         value: preview
-
-
+#         path: /spec/instances
+#         value: 1
