@@ -1,0 +1,20 @@
+# Bootstrap step 1 : installer l'Operator OpenShift GitOps (Argo CD)
+# Cet objet est appliqué AVANT que Argo CD ne soit géré par lui-même.
+# Une fois l'operator installé, le contrôle passera au manifest géré par GitOps
+# dans components/openshift-gitops/base/.
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: openshift-gitops-operator
+  namespace: openshift-operators
+  labels:
+    operators.coreos.com/openshift-gitops-operator.openshift-operators: ""
+spec:
+  channel: latest
+  installPlanApproval: Automatic
+  name: openshift-gitops-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+
+

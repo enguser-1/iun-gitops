@@ -1,0 +1,16 @@
+# CloudNativePG — Operator #5 du socle (PostgreSQL HA cloud-native, CNCF)
+# Source : community-operators (alternativement certified-operators EDB si licence achetée)
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cloudnative-pg
+  namespace: cnpg-system
+spec:
+  channel: stable-v1.24
+  installPlanApproval: Automatic
+  name: cloudnative-pg
+  source: community-operators
+  sourceNamespace: openshift-marketplace
+
+

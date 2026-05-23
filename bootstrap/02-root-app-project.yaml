@@ -1,0 +1,22 @@
+# AppProject "iun-platform" : périmètre de toutes les Apps Argo CD du programme
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: iun-platform
+  namespace: openshift-gitops
+spec:
+  description: Plateforme IUN Sénégal — socle et applicatifs
+  sourceRepos:
+    - "*"  # à restreindre à l'URL Git réelle une fois connue
+  destinations:
+    - namespace: "*"
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+

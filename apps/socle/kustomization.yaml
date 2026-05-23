@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Liste des 11 Applications du socle. L'ordre du fichier ne contraint pas Argo CD,
+# qui synchronise en parallèle (sauf sync-waves explicites).
+resources:
+  - 01-openshift-gitops.yaml
+  - 02-openshift-pipelines.yaml
+  - 03-openshift-servicemesh.yaml
+  - 04-rhbk.yaml
+  - 05-cloudnative-pg.yaml
+  - 06-amq-streams.yaml
+  - 07-openshift-logging.yaml
+  - 08-openshift-data-foundation.yaml
+  - 09-cert-manager.yaml
+  - 10-external-secrets.yaml
+  - 11-rhacs.yaml
+
+

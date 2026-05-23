@@ -1,0 +1,9 @@
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: rhacs-operator
+  namespace: rhacs-operator
+spec: {}  # cluster-scoped (all namespaces, indispensable pour Sensor/Collector)
+
+

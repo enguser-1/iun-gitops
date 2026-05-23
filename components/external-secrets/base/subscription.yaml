@@ -1,0 +1,16 @@
+# External Secrets Operator — Operator #10 du socle
+# Sync HashiCorp Vault ↔ Secrets Kubernetes. Élimine le salt HMAC hardcodé.
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: external-secrets-operator
+  namespace: external-secrets-operator
+spec:
+  channel: stable
+  installPlanApproval: Automatic
+  name: external-secrets-operator
+  source: community-operators
+  sourceNamespace: openshift-marketplace
+
+

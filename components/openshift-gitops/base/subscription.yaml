@@ -1,0 +1,17 @@
+# OpenShift GitOps (Argo CD) — Operator #1 du socle
+# Namespace : openshift-operators (cluster-scoped, OG global déjà présent)
+# Ce manifest est piloté par Argo CD lui-même APRES bootstrap initial.
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: openshift-gitops-operator
+  namespace: openshift-operators
+spec:
+  channel: latest
+  installPlanApproval: Automatic
+  name: openshift-gitops-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+
+

@@ -1,0 +1,23 @@
+# OpenShift Logging 6 nécessite DEUX operators dans DEUX namespaces :
+#  - cluster-logging dans openshift-logging
+#  - loki-operator dans openshift-operators-redhat
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-logging
+  labels:
+    openshift.io/cluster-monitoring: "true"
+  annotations:
+    openshift.io/node-selector: ""
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-operators-redhat
+  labels:
+    openshift.io/cluster-monitoring: "true"
+  annotations:
+    openshift.io/node-selector: ""
+
+

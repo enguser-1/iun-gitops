@@ -1,0 +1,26 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: socle-rhacs
+  namespace: openshift-gitops
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: iun-platform
+  source:
+    repoURL: https://github.com/enguser-1/iun-gitops.git
+    targetRevision: HEAD
+    path: components/rhacs/base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rhacs-operator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+
+

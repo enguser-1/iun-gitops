@@ -1,0 +1,18 @@
+# Argo CD / Kustomize
+.DS_Store
+*.swp
+*.bak
+
+# Outils locaux
+.vscode/
+.idea/
+
+# Secrets : ne JAMAIS commiter de Secret en clair
+secret*.yaml
+*.secret.yaml
+*-secret.yaml
+!*sealed-secret*.yaml      # sealed-secrets autorisés (chiffrés)
+
+# Kubeconfigs locaux
+kubeconfig
+*.kubeconfig
