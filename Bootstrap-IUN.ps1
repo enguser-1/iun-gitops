@@ -15,6 +15,11 @@
         (CSV présent dans openshift-operators, pods openshift-gitops-* Running)
       - Certificat API expiré → --insecure-skip-tls-verify=true partout
 
+    Tous les appels oc passent par le module IunOc.psm1 (Invoke-Oc / Get-OcJson /
+    Test-OcAccess), qui contourne les quirks de quoting de Windows PowerShell 5.1
+    (call operator `&` + .NET ProcessStartInfo) en utilisant System.Diagnostics.Process
+    avec un escape MSVC manuel.
+
     Le script enchaîne 7 étapes idempotentes (toutes en `oc apply`) :
         1. Vérifie la présence du CSV openshift-gitops-operator
         2. Namespace iun-gitops                    (bootstrap/00-iun-gitops-namespace.yaml)
@@ -95,6 +100,23 @@ $ErrorActionPreference = 'Stop'
 $script:HasFailed      = $false
 
 # ---------------------------------------------------------------------------
+# Import du module wrapper oc (IunOc.psm1 à côté de ce script)
+# ---------------------------------------------------------------------------
+$ModulePath = Join-Path $PSScriptRoot 'IunOc.psm1'
+if (-not (Test-Path $ModulePath)) {
+    Write-Error "Module IunOc.psm1 introuvable à côté du script ($ModulePath)."
+    exit 90
+}
+Import-Module $ModulePath -Force -DisableNameChecking
+
+# Configure les flags globaux oc (TLS expiré sur le cluster IUN).
+if ($SkipTlsVerify) {
+    Set-OcGlobalFlags -Flags @('--insecure-skip-tls-verify=true')
+} else {
+    Set-OcGlobalFlags -Flags @()
+}
+
+# ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 $LogDir = Join-Path $GitopsPath '.logs'
@@ -125,49 +147,22 @@ function Write-Log {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-function Get-OcFlags {
-    if ($SkipTlsVerify) { return @('--insecure-skip-tls-verify=true') }
-    return @()
-}
-
-function Invoke-Oc {
+function Invoke-OcStep {
     <#
-        Wrapper unique autour de `oc`. Gère :
-          - injection automatique des flags TLS
-          - mode dry-run (affiche la commande, ne l'exécute pas)
-          - capture stdout/stderr, propage le code retour
+        Wrapper d'étape : appelle Invoke-Oc avec gestion DryRun + logging.
+        Renvoie le PSCustomObject d'Invoke-Oc (ou $null en DryRun).
     #>
     param(
         [Parameter(Mandatory)] [string[]] $OcArgs,
         [switch] $AllowFailure
     )
-    # oc 4.16 refuse les flags globaux placés avant le sous-commande pour
-    # certaines combinaisons (erreur "flags cannot be placed before plugin name: -").
-    # On place donc systématiquement les flags --insecure-skip-tls-verify=true en FIN.
-    $full = @('oc') + $OcArgs + (Get-OcFlags)
-    $cmd  = ($full -join ' ')
-
+    $pretty = ('oc ' + (($OcArgs + (Get-OcGlobalFlags)) -join ' '))
     if ($DryRun) {
-        Write-Log $cmd -Level DRYRUN
-        return ''
+        Write-Log $pretty -Level DRYRUN
+        return $null
     }
-
-    Write-Log "exec: $cmd" -Level INFO
-    try {
-        $output = & $full[0] $full[1..($full.Count - 1)] 2>&1
-        $code   = $LASTEXITCODE
-        if ($code -ne 0 -and -not $AllowFailure) {
-            throw "oc a renvoyé code $code : $output"
-        }
-        return ($output | Out-String).TrimEnd()
-    }
-    catch {
-        if ($AllowFailure) {
-            Write-Log "oc en échec (toléré) : $($_.Exception.Message)" -Level WARN
-            return $null
-        }
-        throw
-    }
+    Write-Log "exec: $pretty"
+    return (Invoke-Oc -OcArgs $OcArgs -AllowFailure:$AllowFailure)
 }
 
 function Test-CommandExists {
@@ -227,58 +222,77 @@ if (-not (Test-CommandExists 'oc')) {
 Write-Log "oc trouvé : $(Get-Command oc | Select-Object -ExpandProperty Source)" -Level OK
 
 # 2) oc whoami
-$flags  = Get-OcFlags
-# oc 4.16 : @flags doit venir APRES le sous-commande complet (cf. Invoke-Oc).
-$whoami = & oc whoami @flags 2>&1
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($whoami)) {
-    Write-Log "Pas de session oc active. Exécute d'abord :" -Level ERROR
-    Write-Log "    oc login $Server --insecure-skip-tls-verify=true" -Level ERROR
+try {
+    $whoamiResult = Invoke-Oc -OcArgs @('whoami') -TimeoutSeconds 30
+    $whoami = $whoamiResult.Stdout.Trim()
+    if ([string]::IsNullOrWhiteSpace($whoami)) { throw "stdout vide" }
+} catch {
+    Write-Log "Pas de session oc active ($($_.Exception.Message))." -Level ERROR
+    Write-Log "Exécute d'abord :  oc login $Server --insecure-skip-tls-verify=true" -Level ERROR
     exit 3
 }
 Write-Log "Utilisateur authentifié : $whoami" -Level OK
 
 # 3) serveur réellement utilisé
-$currentServer = & oc whoami --show-server @flags 2>&1
-if ($LASTEXITCODE -eq 0) {
+try {
+    $srvR = Invoke-Oc -OcArgs @('whoami','--show-server') -TimeoutSeconds 30
+    $currentServer = $srvR.Stdout.Trim()
     Write-Log "Server actif   : $currentServer"
-    if ($currentServer.Trim() -ne $Server.Trim()) {
+    if ($currentServer -ne $Server.Trim()) {
         Write-Log "Le serveur actif diffère du paramètre -Server. On continue sur le contexte actif." -Level WARN
     }
+} catch {
+    Write-Log "oc whoami --show-server KO : $($_.Exception.Message)" -Level WARN
 }
 
 # 4) version OCP
-$verJson = & oc version -o json @flags 2>&1
-if ($LASTEXITCODE -eq 0) {
-    try {
-        $ver = ($verJson | ConvertFrom-Json).openshiftVersion
-        if ($ver) { Write-Log "OpenShift      : $ver" }
-    } catch { Write-Log "Version OCP non parsable (ignorable)" -Level WARN }
-} else {
-    Write-Log "Impossible de récupérer la version OCP (ignorable)" -Level WARN
+try {
+    $verJson = Get-OcJson -OcArgs @('version') -TimeoutSeconds 30
+    if ($verJson.openshiftVersion) {
+        Write-Log "OpenShift      : $($verJson.openshiftVersion)"
+    }
+} catch {
+    Write-Log "Impossible de récupérer la version OCP (ignorable) : $($_.Exception.Message)" -Level WARN
 }
 
 # 5) cluster-admin requis (l'instance dédiée + ClusterRoleBinding l'exigent)
-$canClusterAdmin = & oc auth can-i '*' '*' --all-namespaces @flags 2>&1
-if ($LASTEXITCODE -ne 0 -or $canClusterAdmin.Trim().ToLower() -ne 'yes') {
+$isClusterAdmin = Test-OcAccess -Verb '*' -Resource '*' -AllNamespaces
+if (-not $isClusterAdmin) {
     Write-Log "cluster-admin requis pour créer l'instance ArgoCD dédiée + ClusterRoleBinding." -Level ERROR
-    Write-Log "Réponse 'oc auth can-i * * --all-namespaces' = $canClusterAdmin" -Level ERROR
+    Write-Log "Vérifie : oc auth can-i '*' '*' --all-namespaces" -Level ERROR
     exit 4
 }
 Write-Log "Privilèges     : cluster-admin (OK)" -Level OK
 
+# 5bis) check ciblé create clusterrolebindings (l'étape 4 du bootstrap en a besoin)
+$canCrb = Test-OcAccess -Verb 'create' -Resource 'clusterrolebindings.rbac.authorization.k8s.io'
+if (-not $canCrb) {
+    Write-Log "Création de ClusterRoleBinding refusée (verify cluster-admin / scc.privileged)." -Level ERROR
+    exit 4
+}
+Write-Log "Privilèges     : create clusterrolebindings.rbac.authorization.k8s.io (OK)" -Level OK
+
 # 6) OpenShift GitOps Operator déjà installé ?
-$csvCheck = & oc get csv -n openshift-operators -o name @flags 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Log "Impossible d'inventorier les CSVs : $csvCheck" -Level ERROR
+try {
+    $csv = Get-OcJson -OcArgs @('get','csv','-n','openshift-operators')
+    $gitopsCsv = @($csv.items | Where-Object {
+        $_.metadata.name -like 'openshift-gitops-operator*'
+    })
+    if (-not $gitopsCsv -or $gitopsCsv.Count -eq 0) {
+        Write-Log "OpenShift GitOps Operator absent du namespace openshift-operators." -Level ERROR
+        Write-Log "Ce script suppose l'Operator déjà installé cluster-wide. Installe-le d'abord ou réajuste le scope." -Level ERROR
+        exit 6
+    }
+    foreach ($c in $gitopsCsv) {
+        $phase = $c.status.phase
+        $name  = $c.metadata.name
+        $lvl   = if ($phase -eq 'Succeeded') { 'OK' } else { 'WARN' }
+        Write-Log "OpenShift GitOps Operator : $name — phase $phase" -Level $lvl
+    }
+} catch {
+    Write-Log "Inventaire des CSVs en échec : $($_.Exception.Message)" -Level ERROR
     exit 5
 }
-$gitopsCsv = $csvCheck | Select-String -SimpleMatch 'gitops'
-if (-not $gitopsCsv) {
-    Write-Log "OpenShift GitOps Operator absent du namespace openshift-operators." -Level ERROR
-    Write-Log "Ce script suppose l'Operator déjà installé cluster-wide. Installe-le d'abord ou réajuste le scope." -Level ERROR
-    exit 6
-}
-Write-Log "OpenShift GitOps Operator présent : $($gitopsCsv -join ', ')" -Level OK
 
 # 7) Accessibilité du repo (best-effort)
 try {
@@ -324,7 +338,7 @@ Write-Log "Structure GitOps locale conforme." -Level OK
 Write-Log "Étape 1/7 — Namespace $ArgoNamespace" -Level STEP
 $nsFile = Join-Path $GitopsPath 'bootstrap\00-iun-gitops-namespace.yaml'
 try {
-    Invoke-Oc -OcArgs @('apply','-f', $nsFile) | Out-Null
+    Invoke-OcStep -OcArgs @('apply','-f', $nsFile) | Out-Null
     Write-Log "Namespace $ArgoNamespace appliqué." -Level OK
 }
 catch {
@@ -338,7 +352,7 @@ catch {
 Write-Log "Étape 2/7 — Custom Resource ArgoCD $ArgoName (ns $ArgoNamespace)" -Level STEP
 $argoFile = Join-Path $GitopsPath 'bootstrap\01-iun-argocd.yaml'
 try {
-    Invoke-Oc -OcArgs @('apply','-f', $argoFile) | Out-Null
+    Invoke-OcStep -OcArgs @('apply','-f', $argoFile) | Out-Null
     Write-Log "CR ArgoCD $ArgoName appliquée." -Level OK
 }
 catch {
@@ -352,19 +366,28 @@ catch {
 # ---------------------------------------------------------------------------
 Write-Log "Étape 3/7 — Attente du Deployment $ArgoName-server (ns $ArgoNamespace)" -Level STEP
 try {
-    # Le Deployment peut mettre 30-90s à être créé par l'Operator après l'apply de la CR
+    # Le Deployment peut mettre 30-90s à être créé par l'Operator après l'apply de la CR.
     $tries = 0
     $deployFound = $false
     while ($tries -lt 30) {
-        $d = Invoke-Oc -OcArgs @('get','deployment',"$ArgoName-server",'-n',$ArgoNamespace,'--ignore-not-found','-o','name') -AllowFailure
-        if ($d) { $deployFound = $true; break }
+        $r = Invoke-OcStep -OcArgs @(
+            'get','deployment',"$ArgoName-server",
+            '-n',$ArgoNamespace,
+            '--ignore-not-found',
+            '-o','name'
+        ) -AllowFailure
+        if ($r -and $r.ExitCode -eq 0 -and $r.Stdout) { $deployFound = $true; break }
         Start-Sleep -Seconds 5
         $tries++
     }
     if (-not $deployFound -and -not $DryRun) {
         throw "Deployment $ArgoName-server pas créé après 150s"
     }
-    Invoke-Oc -OcArgs @('wait','--for=condition=Available','--timeout=600s',"deployment/$ArgoName-server",'-n',$ArgoNamespace) | Out-Null
+    Invoke-OcStep -OcArgs @(
+        'wait','--for=condition=Available','--timeout=600s',
+        "deployment/$ArgoName-server",
+        '-n',$ArgoNamespace
+    ) | Out-Null
     Write-Log "Deployment $ArgoName-server disponible." -Level OK
 }
 catch {
@@ -380,7 +403,7 @@ catch {
 Write-Log "Étape 4/7 — RBAC : ClusterRoleBinding cluster-admin pour le controller" -Level STEP
 $rbacFile = Join-Path $GitopsPath 'bootstrap\02-iun-rbac.yaml'
 try {
-    Invoke-Oc -OcArgs @('apply','-f', $rbacFile) | Out-Null
+    Invoke-OcStep -OcArgs @('apply','-f', $rbacFile) | Out-Null
     Write-Log "RBAC appliqué (ServiceAccount $ArgoName-argocd-application-controller → cluster-admin)." -Level OK
     Write-Log "DETTE TECH : binding cluster-admin pour le PoC. À durcir en ClusterRole fine-grained avant prod." -Level DEBT
 }
@@ -395,7 +418,7 @@ catch {
 Write-Log "Étape 5/7 — AppProject iun-platform (ns $ArgoNamespace)" -Level STEP
 $projFile = Join-Path $GitopsPath 'bootstrap\03-root-app-project.yaml'
 try {
-    Invoke-Oc -OcArgs @('apply','-f', $projFile) | Out-Null
+    Invoke-OcStep -OcArgs @('apply','-f', $projFile) | Out-Null
     Write-Log "AppProject iun-platform appliqué." -Level OK
 }
 catch {
@@ -411,7 +434,7 @@ $rootSrc = Join-Path $GitopsPath 'bootstrap\04-root-application.yaml'
 try {
     $rendered = Resolve-RootApplicationManifest -SourceFile $rootSrc -Env $Environment -Repo $RepoUrl
     Write-Log "Manifest rendu : $rendered"
-    Invoke-Oc -OcArgs @('apply','-f', $rendered) | Out-Null
+    Invoke-OcStep -OcArgs @('apply','-f', $rendered) | Out-Null
     Write-Log "Root Application appliquée." -Level OK
 }
 catch {
@@ -426,34 +449,6 @@ Write-Log "Étape 7/7 — Accès console + état des Applications" -Level STEP
 
 Write-Log "Pour récupérer l'URL et le mot de passe admin Argo CD, exécute :" -Level INFO
 Write-Log "    .\Get-ArgoCD-Admin.ps1   # défauts adaptés à l'instance iun-argocd / iun-gitops" -Level INFO
-Write-Log "Ou en commandes brutes :" -Level INFO
-$flagStr = (Get-OcFlags) -join ' '
-Write-Log ("    oc get route $ArgoName-server -n $ArgoNamespace -o jsonpath='{`"https://`"}{.spec.host}{`"\n`"}' $flagStr") -Level INFO
-Write-Log ("    oc get secret $ArgoName-cluster -n $ArgoNamespace -o jsonpath='{.data.admin\.password}' $flagStr | %% { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(`$_)) }") -Level INFO
 
 if ($DryRun) {
-    Write-Log "Dry-run : récap des Applications ignoré." -Level DRYRUN
-}
-else {
-    Start-Sleep -Seconds 3
-    $apps = Invoke-Oc -OcArgs @(
-        'get','applications','-n', $ArgoNamespace,
-        '-o','custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status'
-    ) -AllowFailure
-    if ($apps) {
-        Write-Log "Applications visibles dans $ArgoNamespace :"
-        $apps -split "`n" | ForEach-Object { Write-Log "    $_" }
-    } else {
-        Write-Log "Aucune Application visible pour le moment (peut prendre 30-60s)." -Level WARN
-    }
-}
-
-# ---------------------------------------------------------------------------
-# Sortie
-# ---------------------------------------------------------------------------
-if ($script:HasFailed) {
-    Write-Log "Bootstrap terminé AVEC erreurs — voir log $LogFile" -Level ERROR
-    exit 1
-}
-Write-Log "Bootstrap terminé avec succès. Log : $LogFile" -Level OK
-exit 0
+    Write-Log "Dry-run : récap des Applications igno

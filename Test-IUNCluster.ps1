@@ -16,6 +16,9 @@
         - Operators socle déjà installés (parmi les 11 du §4 du rapport eval)
         - Quotas / nb de projects (sanity sur cluster partagé)
 
+    Tous les appels oc passent par le module IunOc.psm1 (wrappers robustes
+    Windows PowerShell 5.1, cf. Bootstrap-IUN.ps1).
+
     Le rapport markdown est :
         - Affiché sur stdout
         - Écrit dans C:\IUN_APP\gitops\.logs\precheck-YYYYMMDD-HHMMSS.md (sauf -ReportPath)
@@ -53,20 +56,35 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Import du module wrapper oc
 # ---------------------------------------------------------------------------
-function Get-OcFlags {
-    if ($SkipTlsVerify) { return @('--insecure-skip-tls-verify=true') }
-    return @()
+$ModulePath = Join-Path $PSScriptRoot 'IunOc.psm1'
+if (-not (Test-Path $ModulePath)) {
+    Write-Error "Module IunOc.psm1 introuvable à côté du script ($ModulePath)."
+    exit 1
+}
+Import-Module $ModulePath -Force -DisableNameChecking
+
+if ($SkipTlsVerify) {
+    Set-OcGlobalFlags -Flags @('--insecure-skip-tls-verify=true')
+} else {
+    Set-OcGlobalFlags -Flags @()
 }
 
+# ---------------------------------------------------------------------------
+# Helpers locaux (réutilisent les wrappers du module)
+# ---------------------------------------------------------------------------
 function Invoke-OcQuiet {
+    <#
+        Adaptateur historique pour le reste du script. Renvoie un objet
+        { Code, Output } compatible avec l'ancienne API.
+    #>
     param([Parameter(Mandatory)] [string[]] $OcArgs)
-    $full   = @('oc') + (Get-OcFlags) + $OcArgs
-    $output = & $full[0] $full[1..($full.Count - 1)] 2>&1
+    $r = Invoke-Oc -OcArgs $OcArgs -AllowFailure
+    $out = if ($r.Stdout) { $r.Stdout } elseif ($r.Stderr) { $r.Stderr } else { '' }
     return [pscustomobject]@{
-        Code   = $LASTEXITCODE
-        Output = ($output | Out-String).TrimEnd()
+        Code   = $r.ExitCode
+        Output = $out
     }
 }
 
@@ -122,12 +140,16 @@ Add-Check "Session oc" "OK" "user = $($whoami.Output)"
 $srv = Invoke-OcQuiet -OcArgs @('whoami','--show-server')
 if ($srv.Code -eq 0) { Add-Check "Server actif" "INFO" $srv.Output }
 
-$ver = Invoke-OcQuiet -OcArgs @('version','-o','json')
-if ($ver.Code -eq 0) {
-    try {
-        $j = $ver.Output | ConvertFrom-Json
-        Add-Check "Version OCP" "INFO" ("server=$($j.openshiftVersion) ; client=$($j.clientVersion.gitVersion)")
-    } catch { Add-Check "Version OCP" "WARN" "parsing JSON KO" }
+try {
+    $verJson = Get-OcJson -OcArgs @('version') -TimeoutSeconds 30
+    if ($verJson.openshiftVersion) {
+        $client = if ($verJson.clientVersion -and $verJson.clientVersion.gitVersion) { $verJson.clientVersion.gitVersion } else { 'n/a' }
+        Add-Check "Version OCP" "INFO" ("server=$($verJson.openshiftVersion) ; client=$client")
+    } else {
+        Add-Check "Version OCP" "WARN" "openshiftVersion absent du JSON"
+    }
+} catch {
+    Add-Check "Version OCP" "WARN" "oc version -o json KO : $($_.Exception.Message)"
 }
 
 # ---------------------------------------------------------------------------
@@ -135,11 +157,16 @@ if ($ver.Code -eq 0) {
 # ---------------------------------------------------------------------------
 Add-Section "Privilèges"
 
-$admin = Invoke-OcQuiet -OcArgs @('auth','can-i','*','*','--all-namespaces')
-if ($admin.Code -eq 0 -and $admin.Output.Trim().ToLower() -eq 'yes') {
+if (Test-OcAccess -Verb '*' -Resource '*' -AllNamespaces) {
     Add-Check "cluster-admin" "OK" "oc auth can-i * * --all-namespaces = yes"
 } else {
     Add-Check "cluster-admin" "WARN" "non détecté — l'installation des Operators sera bloquée"
+}
+
+if (Test-OcAccess -Verb 'create' -Resource 'clusterrolebindings.rbac.authorization.k8s.io') {
+    Add-Check "create clusterrolebindings" "OK" "RBAC suffisant pour Bootstrap-IUN étape 4"
+} else {
+    Add-Check "create clusterrolebindings" "WARN" "refusé — l'étape RBAC du bootstrap échouera"
 }
 
 # ---------------------------------------------------------------------------
@@ -161,10 +188,12 @@ foreach ($ns in @('openshift-operators','openshift-gitops','iun-gitops','iun-san
 }
 
 # Nombre total de projects (sanity cluster partagé)
-$projCount = Invoke-OcQuiet -OcArgs @('get','projects','--no-headers')
-if ($projCount.Code -eq 0) {
-    $n = ($projCount.Output -split "`n").Count
+try {
+    $projects = Get-OcJson -OcArgs @('get','projects')
+    $n = if ($projects.items) { $projects.items.Count } else { 0 }
     Add-Check "Nb total de projects visibles" "INFO" "$n"
+} catch {
+    Add-Check "Nb total de projects visibles" "WARN" "lecture KO : $($_.Exception.Message)"
 }
 
 # ---------------------------------------------------------------------------
@@ -186,29 +215,33 @@ foreach ($crd in @('applications.argoproj.io','argocds.argoproj.io','appprojects
 # ---------------------------------------------------------------------------
 Add-Section "OpenShift GitOps Operator"
 
-$csv = Invoke-OcQuiet -OcArgs @('get','csv','-n','openshift-operators','-o','custom-columns=NAME:.metadata.name,PHASE:.status.phase','--no-headers')
-if ($csv.Code -eq 0) {
-    $gitopsLines = $csv.Output -split "`n" | Where-Object { $_ -match 'gitops' }
-    if ($gitopsLines) {
-        foreach ($l in $gitopsLines) {
-            $status = if ($l -match 'Succeeded') { 'OK' } else { 'WARN' }
-            Add-Check "CSV $($l.Trim())" $status ""
+try {
+    $csv = Get-OcJson -OcArgs @('get','csv','-n','openshift-operators')
+    $gitopsCsvs = @($csv.items | Where-Object { $_.metadata.name -match 'gitops' })
+    if ($gitopsCsvs.Count -gt 0) {
+        foreach ($c in $gitopsCsvs) {
+            $phase  = if ($c.status.phase) { $c.status.phase } else { 'Unknown' }
+            $status = if ($phase -eq 'Succeeded') { 'OK' } else { 'WARN' }
+            Add-Check "CSV $($c.metadata.name) ($phase)" $status ""
         }
     } else {
         Add-Check "CSV openshift-gitops-operator" "FAIL" "aucun CSV gitops dans openshift-operators"
     }
-} else {
-    Add-Check "Inventaire CSV" "WARN" "oc get csv KO : $($csv.Output)"
+} catch {
+    Add-Check "Inventaire CSV" "WARN" "oc get csv KO : $($_.Exception.Message)"
 }
 
 # État instance Argo CD partagée (diag uniquement)
 $argoSharedNs = Invoke-OcQuiet -OcArgs @('get','namespace','openshift-gitops','--ignore-not-found','-o','name')
 if ($argoSharedNs.Code -eq 0 -and $argoSharedNs.Output) {
-    $pods = Invoke-OcQuiet -OcArgs @('get','pods','-n','openshift-gitops','--no-headers')
-    if ($pods.Code -eq 0) {
-        $running = ($pods.Output -split "`n" | Where-Object { $_ -match 'Running' }).Count
-        $total   = ($pods.Output -split "`n").Count
+    try {
+        $pods = Get-OcJson -OcArgs @('get','pods','-n','openshift-gitops')
+        $items   = @($pods.items)
+        $total   = $items.Count
+        $running = @($items | Where-Object { $_.status.phase -eq 'Running' }).Count
         Add-Check "Pods instance Argo CD partagée" "INFO" "$running/$total Running dans openshift-gitops"
+    } catch {
+        Add-Check "Pods instance Argo CD partagée" "WARN" "lecture pods KO : $($_.Exception.Message)"
     }
 }
 
@@ -217,7 +250,7 @@ if ($argoSharedNs.Code -eq 0 -and $argoSharedNs.Output) {
 # ---------------------------------------------------------------------------
 Add-Section "Operators socle (sur les 11 cibles)"
 
-# Patterns appliqués UNIQUEMENT sur la colonne NAME du CSV (pas sur le namespace),
+# Patterns appliqués UNIQUEMENT sur le NAME du CSV (pas sur le namespace),
 # sinon faux positifs sur cluster partagé (ex: namespace `cert-manager-operator`
 # matche le pattern `cert-manager` même quand le CSV n'est pas présent).
 $socleCheck = @(
@@ -233,78 +266,18 @@ $socleCheck = @(
     @{ Name = 'RHACS';                    Pattern = 'rhacs-operator|advanced-cluster-security' }
 )
 
-# Approche B : on parse `oc get csv -A` en jsonpath pour matcher proprement la
-# colonne NAME. Format de chaque ligne : "<namespace>\t<csv-name>\t<phase>".
-$csvJp  = '{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.status.phase}{"\n"}{end}'
-$csvAll = Invoke-OcQuiet -OcArgs @('get','csv','-A','-o',"jsonpath=$csvJp")
-if ($csvAll.Code -eq 0) {
-    $csvLines = $csvAll.Output -split "`n" |
-        Where-Object { $_ -and (($_ -split "`t").Count -ge 2) }
+# Approche refactor : on parse `oc get csv -A -o json` puis filtrage PowerShell
+# pur sur $csv.items (plus de jsonpath fragile sur Windows PS 5.1).
+try {
+    $csvAll = Get-OcJson -OcArgs @('get','csv','-A')
+    $allItems = @($csvAll.items)
 
     foreach ($op in $socleCheck) {
-        $hit = $csvLines |
-            Where-Object {
-                $cols = $_ -split "`t"
-                $cols[1] -match $op.Pattern
-            } |
-            Select-Object -First 1
+        $hit = $allItems | Where-Object { $_.metadata.name -match $op.Pattern } | Select-Object -First 1
 
         if ($hit) {
-            $cols   = $hit -split "`t"
-            $ns     = $cols[0]
-            $name   = $cols[1]
-            $phase  = if ($cols.Count -ge 3) { $cols[2] } else { '' }
+            $ns     = $hit.metadata.namespace
+            $name   = $hit.metadata.name
+            $phase  = if ($hit.status.phase) { $hit.status.phase } else { 'Unknown' }
             $detail = "$name ($ns) — $phase"
-            $status = if ($phase -eq 'Succeeded') { 'OK' } else { 'WARN' }
-            Add-Check $op.Name $status $detail
-        } else {
-            Add-Check $op.Name "INFO" "non installé"
-        }
-    }
-} else {
-    Add-Check "Inventaire CSV cluster-wide" "WARN" "oc get csv -A KO : $($csvAll.Output)"
-}
-
-# ---------------------------------------------------------------------------
-# Synthèse
-# ---------------------------------------------------------------------------
-Add-Section "Synthèse"
-
-$nFail = ($summary | Where-Object { $_.Status -eq 'FAIL' }).Count
-$nWarn = ($summary | Where-Object { $_.Status -eq 'WARN' }).Count
-$nOk   = ($summary | Where-Object { $_.Status -eq 'OK'   }).Count
-$nInfo = ($summary | Where-Object { $_.Status -eq 'INFO' }).Count
-
-Add-Line ("- OK    : {0}" -f $nOk)
-Add-Line ("- WARN  : {0}" -f $nWarn)
-Add-Line ("- FAIL  : {0}" -f $nFail)
-Add-Line ("- INFO  : {0}" -f $nInfo)
-Add-Line ""
-
-if ($nFail -gt 0) {
-    Add-Line "**Verdict : bloquant.** Corrige les FAIL avant de lancer Bootstrap-IUN.ps1."
-} elseif ($nWarn -gt 0) {
-    Add-Line "**Verdict : warnings.** Lis chaque WARN et confirme qu'il est attendu, puis go bootstrap."
-} else {
-    Add-Line "**Verdict : OK.** Cluster prêt pour Bootstrap-IUN.ps1."
-}
-
-# ---------------------------------------------------------------------------
-# Sortie : console + fichier
-# ---------------------------------------------------------------------------
-$content = $report -join "`n"
-Write-Host ""
-Write-Host $content
-Write-Host ""
-
-if (-not $NoFile) {
-    if (-not $ReportPath) {
-        $logDir = 'C:\IUN_APP\gitops\.logs'
-        if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
-        $ReportPath = Join-Path $logDir ("precheck-{0}.md" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
-    }
-    Set-Content -Path $ReportPath -Value $content -Encoding UTF8
-    Write-Host "Rapport écrit : $ReportPath" -ForegroundColor Cyan
-}
-
-if ($nFail -gt 0) { exit 1 } else { exit 0 }
+            $status = if ($phase -eq 'Succeed
