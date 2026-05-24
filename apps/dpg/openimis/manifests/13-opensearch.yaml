@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # OpenSearch — moteur de recherche / dashboards reports OpenIMIS
 # ============================================================================
 # ⚠ OpenSearch sur OCP requiert vm.max_map_count >= 262144 (sysctl host).
@@ -116,7 +116,7 @@ spec:
           app.kubernetes.io/component: opensearch
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: ocs-storagecluster-ceph-rbd
+        storageClassName: ocs-external-storagecluster-ceph-rbd
         resources:
           requests:
             storage: 30Gi

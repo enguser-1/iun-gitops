@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # PVC partagé "openimis-photos"
 # ============================================================================
 # Le compose officiel monte le volume `photos` à la fois sur backend ET worker
@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/component: shared-storage
 spec:
   accessModes: ["ReadWriteMany"]
-  storageClassName: ocs-storagecluster-cephfs
+  storageClassName: ocs-external-storagecluster-cephfs
   resources:
     requests:
       storage: 5Gi

@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # RabbitMQ — broker AMQP pour Celery (worker async)
 # ============================================================================
 apiVersion: v1
@@ -95,7 +95,7 @@ spec:
           app.kubernetes.io/component: rabbitmq
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: ocs-storagecluster-ceph-rbd
+        storageClassName: ocs-external-storagecluster-ceph-rbd
         resources:
           requests:
             storage: 5Gi

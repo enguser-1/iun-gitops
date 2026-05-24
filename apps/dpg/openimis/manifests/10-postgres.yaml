@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # Postgres OpenIMIS — image custom upstream avec schéma préchargé
 # ============================================================================
 # Source compose officielle :
@@ -103,7 +103,7 @@ spec:
           app.kubernetes.io/component: postgres
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: ocs-storagecluster-ceph-rbd
+        storageClassName: ocs-external-storagecluster-ceph-rbd
         resources:
           requests:
             storage: 20Gi
