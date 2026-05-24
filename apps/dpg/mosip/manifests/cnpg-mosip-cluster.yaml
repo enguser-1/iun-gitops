@@ -1,0 +1,91 @@
+# ============================================================================
+# CloudNativePG — Cluster Postgres pour MOSIP MVP
+# ============================================================================
+# Backend Postgres pour kernel + keymanager + audit. Géré par l'opérateur
+# CNPG déjà installé cluster-wide (cf. README repo gitops §0, prérequis socle).
+#
+# En sandbox dev : 3 instances (1 primary + 2 replicas), HA léger. 10 Gi par
+# instance sur la storageClass block ODF — ce qui suffit pour ≤ 1k UINs en
+# MVP démo. À pousser à 100 Gi minimum en staging.
+#
+# Le chart kernel attend un Secret au format CNPG `<cluster>-app` (clé
+# `username`/`password`/`uri`/`dbname`) que CNPG génère automatiquement à la
+# création du cluster.
+#
+# Documentation CNPG : https://cloudnative-pg.io/documentation/1.22/
+# ============================================================================
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: mosip-postgres
+  namespace: mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+    iun.sn/component: db-backend
+  annotations:
+    iun.sn/tor-ref: "§4.1, §5.5 (storage layer)"
+spec:
+  instances: 3
+
+  # Image Postgres : utiliser la dernière 16-LTS compatible MOSIP 1.2.0.x.
+  # MOSIP utilise PG 12 par défaut dans son ansible mais 16 fonctionne avec
+  # les scripts mosip-postgres-init (validé community 2025).
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4-bookworm
+
+  # Param Postgres : MOSIP a quelques exigences (pgcrypto, uuid-ossp pour
+  # certaines DBs kernel)
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      work_mem: "16MB"
+      maintenance_work_mem: "64MB"
+      effective_cache_size: "1GB"
+      log_min_duration_statement: "1000"
+    pg_hba:
+      - host all all all md5
+
+  # Bootstrap initdb — CNPG crée une DB "app" + user "app". MOSIP créera ses
+  # propres DBs (mosip_kernel, mosip_keymgr, mosip_audit, ...) via le job
+  # mosip-postgres-init du chart kernel. On crée juste la DB superuser ici.
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      # Le secret 'mosip-postgres-app' est généré auto par CNPG (clés:
+      # username, password, dbname, host, port, jdbc-uri, uri).
+      secret:
+        name: mosip-postgres-app
+      # Extensions Postgres requises par MOSIP (cf. kernel install scripts)
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        - CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+  storage:
+    # ODF block storage (présent sur le cluster — cf. SYNTHESE §socle).
+    # En staging/prod : 100 Gi minimum + classe `ocs-storagecluster-ceph-rbd`
+    # avec snapshot policy.
+    storageClass: ocs-storagecluster-ceph-rbd
+    size: 10Gi
+
+  # Ressources sandbox dev (CLUSTER PARTAGÉ)
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  # Affinity : étalement sur les workers (anti-affinity inter-instances)
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+
+  # Monitoring auto (CNPG expose les metrics Prometheus via /metrics)
+  monitoring:
+    enablePodMonitor: true
+
+  # Backups : DÉSACTIVÉ en dev sandbox. En staging/prod, configurer une
+  # Barman cloud (S3 ODF) — voir BACKUP_DR_v1.md à venir.

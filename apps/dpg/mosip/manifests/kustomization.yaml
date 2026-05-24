@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# ============================================================================
+# apps/dpg/mosip/manifests/kustomization.yaml
+# ============================================================================
+# Agrège les CR métier qui vivent DANS le namespace mosip-dev (pas dans
+# iun-gitops). C'est ce dossier que l'Application Argo CD `mosip-bootstrap`
+# va synchroniser (sync-wave -10, avant les charts Helm MOSIP).
+# ============================================================================
+namespace: mosip-dev
+
+resources:
+  - namespace.yaml
+  - scc-mosip.yaml
+  - cnpg-mosip-cluster.yaml
+  - configmap-iun-format.yaml
+  - kafka-mosip-cluster.yaml          # placeholder iter-2
+  - keycloak-realm-mosip.yaml         # placeholder iter-2

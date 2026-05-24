@@ -1,0 +1,64 @@
+# ============================================================================
+# Keycloak Realm MOSIP via RHBK Operator — PLACEHOLDER (itération 2)
+# ============================================================================
+# Statut MVP itération 1 : pas requis. Pour générer un IUN via curl en cluster-
+# internal on peut bypass auth (env-var MOSIP `mosip.kernel.auth.proxy-otp=true`
+# et `mosip.auth.filter_disable=true` dans le profil dev). Le keycloak realm
+# MOSIP devient nécessaire à partir du moment où on ajoute :
+#   - id-authentication (IDA), qui valide les tokens
+#   - resident-services (portail citoyen, login OIDC)
+#   - admin-services (portail admin)
+#   - pre-registration (portail citoyen)
+#
+# Tout ça est itération 2/3. On laisse ce fichier en placeholder commenté
+# pour que la structure existe et que le Lead n'ait qu'à décommenter le
+# moment venu. RHBK Operator est déjà installé cluster-wide.
+# ============================================================================
+#
+# apiVersion: k8s.keycloak.org/v2alpha1
+# kind: KeycloakRealmImport
+# metadata:
+#   name: mosip-realm
+#   namespace: mosip-dev
+#   labels:
+#     app.kubernetes.io/part-of: iun-platform
+#     iun.sn/dpg: mosip
+#     iun.sn/component: iam
+#   annotations:
+#     iun.sn/tor-ref: "§3.3.2 (Keycloak IAM)"
+# spec:
+#   # On rattache au déploiement Keycloak RHBK existant — Lead à confirmer
+#   # le nom du Keycloak CR.
+#   keycloakCRName: rhbk-mosip
+#   realm:
+#     id: mosip
+#     realm: mosip
+#     enabled: true
+#     # Clients standard MOSIP (cf. mosip-config/application-default.properties)
+#     # appids = prereg, ida, registrationclient, regproc, partner, resident,
+#     #          admin, crereq, creser, datsha, idrepo, hotlist, digitalcard, signup
+#     # En itération 1, AUCUN de ces clients n'est nécessaire (cluster-internal
+#     # uniquement). À provisionner itération 2 module par module.
+#     clients: []
+#     roles:
+#       realm: []
+#     users: []
+#
+# ----------------------------------------------------------------------------
+# ConfigMap "noop" pour validité du dossier manifests/
+# ----------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosip-keycloak-placeholder
+  namespace: mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+    iun.sn/component: iam
+  annotations:
+    iun.sn/status: "keycloak-realm-deferred-iter-2"
+data:
+  status: "deferred"
+  why: "Internal cluster-only UIN gen does not need OIDC. Authentication is bypassed in dev profile."
+  activation: "uncomment the KeycloakRealmImport above when adding IDA/resident/admin"

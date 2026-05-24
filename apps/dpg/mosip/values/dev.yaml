@@ -1,100 +1,176 @@
 # ============================================================================
-# values dev — MOSIP (overrides Sénégal, environnement dev)
+# values dev — chart `kernel` (mosip-helm v1.2.0.4)
 # ============================================================================
-# Référencé par apps/dpg/mosip/application.yaml via spec.source.helm.valueFiles
-# (à activer quand on passera de la bootstrap-probe au déploiement modulaire).
+# Consommé par l'Application Argo CD `mosip-kernel` (cf. application.yaml,
+# source #1 = mosip-helm chart `kernel`).
 #
-# ⚠ Ce fichier est un SQUELETTE — les clés Helm réelles dépendent du chart
-# MOSIP retenu (kernel, registration-processor, id-authentication, etc.).
-# Chaque module MOSIP a son propre chart dans mosip/mosip-helm. À détailler
-# au moment du déploiement de chaque module.
+# Le chart `kernel` est un META-CHART (collection de sub-services Spring Boot
+# packagés ensemble — idgenerator-service, cryptomanager-service,
+# keymanager-service, auditmanager-service, masterdata-service,
+# otpmanager-service, syncdata-service, pridgenerator-service,
+# ridgenerator-service, etc.). Chacun a son sous-arbre de values. Ici on
+# configure UNIQUEMENT le subset MVP — `kernel-idgenerator-service` en
+# première priorité, plus les dépendances strictes (Postgres, config-server).
+#
+# ⚠ POINTS À VALIDER PAR LE LEAD avant le premier sync :
+#   1. Tag du chart effectivement publié : 12.0.4 vs 1.2.0.4 vs v1.2.0.4 ?
+#      Cmd : `helm repo update mosip && helm search repo mosip/kernel --versions | head`
+#   2. Schéma exact des values (chart-level vs sub-service) :
+#      `helm show values mosip/kernel --version <pin> > /tmp/kernel-values-upstream.yaml`
+#      puis comparer avec ce fichier — adapter les clés qui ne matchent pas.
+#   3. La référence à `config-server` se fait via env var `spring.cloud.config.uri` —
+#      vérifier que la valeur ci-dessous matche le Service du chart config-server.
 # ============================================================================
 
-# -- Configuration générale du déploiement
-global:
-  # Namespace cible (cohérent avec destination.namespace de l'Application)
-  namespace: mosip-dev
-
-  # Mode V3 (Kubernetes natif, supporté depuis MOSIP 1.2.0.1-B1)
-  deploymentMode: V3
-
-  # Active le profil "sandbox" en dev — moins de ressources, données de test.
-  # En staging/prod, basculer sur "production" avec ressources et HA full.
-  profile: sandbox
-
-# -- Image registry et tag (à figer après évaluation)
+# -- Image (LTS la plus récente compatible kernel 1.2.0.4)
+# Le tag image MOSIP ≠ tag chart Helm — le chart pointe sur l'image officielle
+# mosipid/* du Docker Hub MOSIP.
 image:
-  registry: docker.io
-  repository: mosipid
-  tag: 1.2.1.0  # À confirmer comme LTS stable au moment du déploiement
   pullPolicy: IfNotPresent
 
-# -- Ressources (sandbox dev — à augmenter en staging/prod)
+# -- Ressources sandbox dev (CLUSTER PARTAGÉ — pas de réservation lourde)
+# MOSIP "production reference" demande ~50 vCPU/100Gi RAM. En dev on divise
+# par 10 et on accepte des requests basses ; les limites évitent un pod hostile.
 resources:
   requests:
-    cpu: 200m
+    cpu: 100m
     memory: 512Mi
   limits:
     cpu: 1000m
     memory: 2Gi
 
-# -- Override IUN Sénégal : 9 chiffres + Verhoeff (TOR §4.1.3 / §4.1.4)
-# Ces clés sont injectées dans la ConfigMap kernel-uin-generator-config
-# (à confirmer selon le chart MOSIP applicatif).
-kernel:
-  uinGenerator:
-    length: 9
-    checkDigitAlgorithm: VERHOEFF
-    # Plage initiale d'UINs pré-générés pour dev (en prod : 1 million)
-    initialPoolSize: 1000
-
-# -- Persistence (volumes ODF en prod ; emptyDir en dev pour démarrer rapidement)
-persistence:
+# -- Connexion config-server (chart sœur, Application mosip-config-server)
+# Service par défaut publié par le chart config-server : `config-server.<ns>:51000`
+# (port standard MOSIP). En env-var Spring : SPRING_CLOUD_CONFIG_URI.
+springCloudConfig:
   enabled: true
-  storageClass: ocs-storagecluster-ceph-rbd  # ODF block (présent sur le cluster)
-  size: 10Gi
+  uri: "http://config-server.mosip-dev.svc.cluster.local:51000/config"
+  label: master
+  # `default` = profil Spring lu par config-server. Quand on forkera
+  # mosip-config en `iun-sn-mosip-config`, basculer ici sur `iun-sn-dev`.
+  profile: default
 
-# -- ABIS biométrique (TOR §3.3.3) — non configuré en dev sandbox
-abis:
-  enabled: false
-  provider: ""  # tech5 | aware | idemia | mock (en dev : mock à activer pour PoC)
-
-# -- HSM (TOR §3.3.3 + §4.3.2 — Luna FIPS 140-2 L3) — non en dev
-hsm:
-  enabled: false
-  # En staging/prod : passer en true et pointer sur Vault HSM ou Luna direct.
-
-# -- Keycloak intégré (MOSIP embarque son propre Keycloak)
-# Décision à arbitrer : harmoniser sur RHBK déjà installé sur le cluster ?
-# Voir backlog dans README.md de ce dossier.
-keycloak:
-  enabled: true
-  external: false  # true = pointer sur RHBK ; false = Keycloak embarqué MOSIP
-
-# -- Connexion Kafka (AMQ Streams existant sur le cluster)
-kafka:
-  enabled: true
-  external: true
-  bootstrapServers: "iun-kafka-bootstrap.kafka.svc.cluster.local:9092"  # placeholder
-
-# -- Postgres (chart CNPG existant — à provisionner via une Application séparée)
+# -- Connexion Postgres (CNPG externe, géré par mosip-bootstrap)
+# La CNPG Cluster CR est créée dans manifests/cnpg-mosip-cluster.yaml.
+# Service read/write : `mosip-postgres-rw.mosip-dev.svc:5432`.
+# Le chart `kernel` provisionne ses DBs via un init-container
+# (mosip-postgres-init) — on lui donne juste host + secret.
+# CNPG génère le Secret `mosip-postgres-app` (clés: username, password, dbname).
 postgres:
   enabled: true
   external: true
-  host: "mosip-postgres-rw.mosip-data.svc.cluster.local"  # placeholder
+  host: mosip-postgres-rw.mosip-dev.svc.cluster.local
   port: 5432
+  existingSecret: mosip-postgres-app
+  databases:
+    kernel: mosip_kernel
+    keymanager: mosip_keymgr
+    audit: mosip_audit
 
-# -- OpenShift Route (vs Ingress upstream)
-# Le chart MOSIP utilise probablement Ingress par défaut ; sur OCP on préfère
-# la Route. À configurer via un patch Kustomize ou en exposant manuellement.
-ingress:
-  enabled: false  # désactivé pour laisser place à OpenShift Route
+# -- UIN generator : override Sénégal (TOR §4.1.2 / §4.1.3)
+# ATTENTION — Clés CANONIQUES validées contre
+# https://github.com/mosip/mosip-config/blob/master/application-default.properties
+# Défaut MOSIP : `mosip.kernel.uin.length=10`. TOR Sénégal impose 9.
+# Verhoeff n'est PAS configurable — codé en dur dans kernel-idgenerator-service.
+# Le check digit Verhoeff EST le dernier des 9 chiffres ; les 8 autres sont
+# aléatoires avec filtres anti-patterns évidents.
+overrides:
+  # >>> CRITIQUE — longueur UIN ramenée de 10 à 9 (impose TOR §4.1.3)
+  mosip.kernel.uin.length: "9"
+
+  # Pool de pré-génération réduit pour dev (default = 500000).
+  mosip.kernel.uin.uins-to-generate: "1000"
+  mosip.kernel.uin.min-unused-threshold: "100"
+
+  # ⚠ Filtres anti-patterns : MOSIP a calibré ces seuils pour length=10.
+  # À length=9, certains filtres deviennent trop agressifs. On relaxe
+  # reverse-digits-limit et digits-limit de 5 à 4. Voir README §Risques.
+  mosip.kernel.uin.length.sequence-limit:          "3"
+  mosip.kernel.uin.length.repeating-block-limit:   "2"
+  mosip.kernel.uin.length.repeating-limit:         "2"
+  mosip.kernel.uin.length.reverse-digits-limit:    "4"
+  mosip.kernel.uin.length.digits-limit:            "4"
+  mosip.kernel.uin.length.conjugative-even-digits-limit: "3"
+  mosip.kernel.uin.not-start-with:    "0,1"
+  mosip.kernel.uin.restricted-numbers: "786,666"
+
+  # Resync seed every 45 min — défaut MOSIP, on garde.
+  mosip.idgen.uin.secure-random-reinit-frequency: "45"
+
+# -- Sub-services du chart kernel — on N'ACTIVE que ce qui est utile au MVP
+# Les autres restent désactivés pour ne pas consommer le cluster partagé.
+# Le Lead réactivera au fur et à mesure (websub, masterdata-service, etc.)
+# en itération 2.
+services:
+  idgenerator:
+    enabled: true
+    replicas: 1
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits:   { cpu: 500m, memory: 1Gi }
+  cryptomanager:
+    # Requis par idgenerator (signature des payloads de génération)
+    enabled: true
+    replicas: 1
+  authmanager:
+    # Requis car idgenerator vérifie les tokens — en dev `proxy-otp=true`
+    enabled: true
+    replicas: 1
+  masterdata:
+    enabled: false
+  auditmanager:
+    enabled: true
+    replicas: 1
+  otpmanager:
+    enabled: false
+  syncdata:
+    enabled: false
+  pridgenerator:
+    enabled: false
+  ridgenerator:
+    enabled: false
+  saltgenerator:
+    enabled: false
+  notifier:
+    enabled: false
+  licensekeymanager:
+    enabled: false
 
 # -- Sécurité OpenShift
-# MOSIP charts ont historiquement besoin de SCC `restricted-v2` voire `anyuid`
-# selon les modules — à valider au déploiement. NE PAS accorder `privileged`
-# globalement.
+# MOSIP charts ont plusieurs init-containers qui montent des volumes en root
+# (`mosip-postgres-init`, `wait-for-config-server`). On octroie `anyuid` SCC
+# au SA via manifests/scc-mosip.yaml. NE PAS accorder `privileged`.
 podSecurityContext:
-  runAsNonRoot: true
-  seccompProfile:
-    type: RuntimeDefault
+  runAsNonRoot: false
+  fsGroup: 1001
+serviceAccount:
+  create: true
+  name: mosip-kernel
+  annotations: {}
+
+# -- Ingress vs OpenShift Route
+# Le chart upstream propose `ingress.*` (NGINX) ; sur OCP on préfère exposer
+# par une Route déclarée séparément. Pour le MVP, on hit le Service en
+# cluster-internal (port-forward via oc).
+ingress:
+  enabled: false
+
+# -- Probes Spring Boot (/actuator/health/{readiness,liveness})
+probes:
+  readiness:
+    httpGet:
+      path: /actuator/health/readiness
+      port: 8090
+    initialDelaySeconds: 60
+    periodSeconds: 10
+  liveness:
+    httpGet:
+      path: /actuator/health/liveness
+      port: 8090
+    initialDelaySeconds: 120
+    periodSeconds: 30
+
+# -- Persistence : pas de PVC nécessaire pour kernel-idgenerator (stateless).
+# Les pools d'UINs sont en DB. Postgres CNPG a son propre PVC (ODF).
+persistence:
+  enabled: false

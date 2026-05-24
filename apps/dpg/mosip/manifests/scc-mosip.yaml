@@ -1,0 +1,72 @@
+# ============================================================================
+# SecurityContextConstraints — MOSIP on OpenShift
+# ============================================================================
+# Pourquoi un SCC custom :
+#   MOSIP 1.2.0.x lance plusieurs init-containers en root pour faire des
+#   choses légitimes : `mosip-postgres-init` crée les schemas dans Postgres,
+#   `wait-for-config-server` télécharge un cert auto-signé et le mount dans
+#   /etc/ssl/certs/java/cacerts (write nécessite root). Le SCC OpenShift
+#   `restricted-v2` (default) refuse runAsUser=0 → les pods plantent au boot.
+#
+# Solution PROPRE : on N'octroie PAS `anyuid` à tout le SA — on crée un SCC
+# dédié `mosip-anyuid` (clone de `anyuid` upstream OCP) et on le bind au
+# ServiceAccount `mosip-kernel` (créé par le chart kernel) et aux SA des
+# autres modules MOSIP au fur et à mesure de leur ajout.
+#
+# CE FICHIER OCTROIE LE SCC AU SA `default` du namespace mosip-dev EN PLUS
+# par défensif (init-jobs souvent en SA default). À durcir : restreindre
+# aux SA spécifiques quand on aura identifié lesquels sont en root.
+# ============================================================================
+
+---
+# SCC dédié MOSIP — clone du `anyuid` upstream, on garde tous les autres
+# garde-fous (pas de privileged, pas de hostNetwork, pas de hostPID).
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: mosip-anyuid
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+  annotations:
+    kubernetes.io/description: "SCC for MOSIP charts that require runAsUser=0 in init-containers"
+    iun.sn/tor-ref: "§6.3 (security baseline)"
+# Permet runAsUser arbitraire (y compris 0)
+runAsUser:
+  type: RunAsAny
+# Le reste est conservateur — clone de `restricted-v2` MOSIP-modifié
+seLinuxContext:
+  type: MustRunAs
+fsGroup:
+  type: RunAsAny
+supplementalGroups:
+  type: RunAsAny
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: true   # init-containers MOSIP en ont besoin (cacerts write)
+allowPrivilegedContainer: false  # JAMAIS privileged
+allowedCapabilities: null
+defaultAddCapabilities: null
+priority: 10
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+  - MKNOD
+  - SETUID
+  - SETGID
+volumes:
+  - configMap
+  - downwardAPI
+  - emptyDir
+  - persistentVolumeClaim
+  - projected
+  - secret
+
+# Users/Groups auxquels ce SCC s'applique. On ajoutera les SA spécifiques
+# créés par les charts au fur et à mesure (cf. listings dans values/dev*.yaml).
+users:
+  - system:serviceaccount:mosip-dev:mosip-kernel
+  - system:serviceaccount:mosip-dev:default
+groups: []

@@ -1,0 +1,72 @@
+# ============================================================================
+# values dev — chart `keymanager` (mosip-helm v1.2.0.4)
+# ============================================================================
+# Consommé par l'Application Argo CD `mosip-keymanager`.
+#
+# Rôle : kernel-keymanager-service. Sert de signataire crypto à tous les
+# modules MOSIP qui ont besoin de signer des payloads (idgenerator, IDA,
+# regproc, etc.). En PROD c'est lui qui parle au HSM Luna FIPS 140-2 L3.
+# En DEV sandbox, on utilise le software keystore par défaut (PKCS#12 stocké
+# en cluster).
+# ============================================================================
+
+image:
+  pullPolicy: IfNotPresent
+
+# -- Postgres (même CNPG cluster que kernel, schéma `mosip_keymgr`)
+postgres:
+  enabled: true
+  external: true
+  host: mosip-postgres-rw.mosip-dev.svc.cluster.local
+  port: 5432
+  existingSecret: mosip-postgres-app
+  database: mosip_keymgr
+
+# -- Spring Cloud Config (relai vers le config-server sœur)
+springCloudConfig:
+  enabled: true
+  uri: "http://config-server.mosip-dev.svc.cluster.local:51000/config"
+  label: master
+  profile: default
+
+# -- HSM : DÉSACTIVÉ en dev sandbox. En staging/prod on basculera sur
+# `softhsm` (mock SoftHSM2) puis Luna direct. La doc d'intégration HSM est
+# dans docs/mosip-hsm-config.md (à créer itération 3+).
+hsm:
+  enabled: false
+  # Quand on l'activera, pointer sur un Secret contenant le PIN PKCS#11 et
+  # mount /opt/luna-client/lib/libCryptoki2_64.so via initContainer.
+
+# -- Configuration master keys (utilisé pour les keys auto-générées au boot)
+softhsm:
+  enabled: true  # software fallback — OK en dev
+  # PIN par défaut MOSIP — À CHANGER en staging via Secret.
+  pin: "1234"
+
+# -- Ressources sandbox dev
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+  port: 8088
+
+ingress:
+  enabled: false
+
+probes:
+  readiness:
+    httpGet:
+      path: /actuator/health/readiness
+      port: 8088
+    initialDelaySeconds: 60
+  liveness:
+    httpGet:
+      path: /actuator/health/liveness
+      port: 8088
+    initialDelaySeconds: 120

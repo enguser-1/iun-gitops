@@ -1,0 +1,89 @@
+# ============================================================================
+# Kafka — KafkaCluster pour MOSIP (PLACEHOLDER — différé à l'itération 2)
+# ============================================================================
+# Statut MVP itération 1 : kernel-idgenerator-service n'a PAS besoin de Kafka.
+# Kafka est consommé par :
+#   - websub (event hub)
+#   - registration-processor (workflow events)
+#   - id-authentication (audit-stream)
+#   - resident-services
+#
+# Aucun de ces modules n'est dans le subset MVP UIN. On déclare donc le
+# KafkaCluster en avance pour que l'itération 2 ait juste à `oc apply` ce
+# fichier — pas pour le MVP.
+#
+# On commente le CR pour éviter qu'Argo CD le crée prématurément (sinon
+# consommation cluster inutile sur le sandbox partagé). Le Lead décommente
+# manuellement au démarrage de l'itération 2.
+#
+# AMQ Streams Operator est déjà installé cluster-wide — pas besoin de le
+# provisionner ici.
+# ============================================================================
+#
+# apiVersion: kafka.strimzi.io/v1beta2
+# kind: Kafka
+# metadata:
+#   name: mosip-kafka
+#   namespace: mosip-dev
+#   labels:
+#     app.kubernetes.io/part-of: iun-platform
+#     iun.sn/dpg: mosip
+#     iun.sn/component: messaging-bus
+#   annotations:
+#     iun.sn/tor-ref: "§3.3.2, §4.3.1 (event-driven IDA)"
+#     iun.sn/status: "deferred-iter-2"
+# spec:
+#   kafka:
+#     version: 3.6.0
+#     replicas: 3
+#     listeners:
+#       - name: plain
+#         port: 9092
+#         type: internal
+#         tls: false
+#     config:
+#       offsets.topic.replication.factor: 3
+#       transaction.state.log.replication.factor: 3
+#       transaction.state.log.min.isr: 2
+#       default.replication.factor: 3
+#       min.insync.replicas: 2
+#       inter.broker.protocol.version: "3.6"
+#     storage:
+#       type: persistent-claim
+#       size: 10Gi
+#       class: ocs-storagecluster-ceph-rbd
+#     resources:
+#       requests: { cpu: 200m, memory: 1Gi }
+#       limits:   { cpu: 1000m, memory: 2Gi }
+#   zookeeper:
+#     replicas: 3
+#     storage:
+#       type: persistent-claim
+#       size: 5Gi
+#       class: ocs-storagecluster-ceph-rbd
+#     resources:
+#       requests: { cpu: 100m, memory: 512Mi }
+#       limits:   { cpu: 500m, memory: 1Gi }
+#   entityOperator:
+#     topicOperator: {}
+#     userOperator: {}
+#
+# ----------------------------------------------------------------------------
+# Manifest "noop" valide pour qu'Argo CD ne se plaigne pas d'un dossier vide.
+# C'est un ConfigMap purement documentaire — pas de side-effect.
+# ----------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosip-kafka-placeholder
+  namespace: mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+    iun.sn/component: messaging-bus
+  annotations:
+    iun.sn/status: "kafka-deferred-iter-2"
+data:
+  status: "deferred"
+  why: "kernel-idgenerator-service does not need Kafka. Activate this CR at iter-2 when adding websub/regproc/IDA."
+  activation: "uncomment the Kafka CR above and remove this ConfigMap"

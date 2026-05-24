@@ -1,59 +1,80 @@
 # ============================================================================
-# ConfigMap : MOSIP UIN (= IUN au Sénégal) — format 9 chiffres + Verhoeff
+# ConfigMap : surcharge IUN — format 9 chiffres + Verhoeff
 # ============================================================================
-# Rôle TOR §4.1.2 + §4.1.3 + §4.1.4 :
-#   - 8 chiffres aléatoires + 1 chiffre de contrôle Verhoeff (théorie des
-#     groupes diédraux)
-#   - Affichage citoyen sous la forme SN-NNNN-NNNN-N (préfixe non stocké)
-#   - Stockage uniquement sous forme de hash SHA-256
+# Rôle TOR §4.1.2 / §4.1.3 / §4.1.4.
 #
-# Clé canonique MOSIP (kernel-config) :
-#   mosip.kernel.idgenerator.uin.check-digit-algorithm = VERHOEFF
-#   mosip.kernel.uin.length = 9
+# ⚠ AVERTISSEMENT IMPORTANT — ce ConfigMap est INFORMATIONNEL en itération 1.
+# Les overrides RÉELS qui pilotent kernel-idgenerator-service sont injectés
+# via env-vars dans l'Application Argo CD mosip-config-server
+# (values/dev-config-server.yaml). MOSIP suit la convention Spring Cloud
+# Config : les properties viennent du config-server, pas d'un ConfigMap natif
+# K8s monté dans le pod.
 #
-# ⚠ AVERTISSEMENT — clés à VALIDER contre la doc MOSIP 1.2.x officielle
-# avant le premier déploiement applicatif. Les noms exacts dans les ConfigMap
-# kernel/registration-config peuvent différer selon la version retenue
-# (kernel-config vs registration-processor-config vs uin-generator-config).
-# TODO :
-#   1. Cloner mosip/mosip-config @ release-1.2.1.0 et vérifier les clés
-#      effectivement consommées par le module uingenerator du kernel.
-#   2. Identifier si la ConfigMap doit s'appeler `kernel-uin-generator-config`
-#      ou être merge dans `kernel-config` (selon le chart Helm).
-#   3. Cette ConfigMap est PROBE — elle ne sera consommée qu'après que
-#      l'Application MOSIP applicative (kernel) sera déployée.
+# Cette ConfigMap-ci sert d'AUDIT TRAIL et de référence opérateur : elle
+# documente, à un endroit lisible par `oc get cm`, quelles sont les
+# surcharges Sénégal attendues. Pas de couplage runtime.
 #
-# Référence canonique : https://github.com/mosip/mosip-config
+# Clés CANONIQUES validées contre
+# https://github.com/mosip/mosip-config/blob/master/application-default.properties :
+#   mosip.kernel.uin.length         = 9    (override Sénégal — défaut MOSIP = 10)
+#   mosip.kernel.uin.uins-to-generate = 1000 (sandbox dev — défaut prod = 500000)
+#   mosip.kernel.uin.min-unused-threshold = 100 (sandbox dev — défaut = 200000)
+#   ...filtres anti-patterns : voir values/dev.yaml et values/dev-config-server.yaml
+#
+# CLEFS QUI N'EXISTENT PAS (à NE PAS configurer — erreurs de l'itération précédente) :
+#   mosip.kernel.idgenerator.uin.check-digit-algorithm  ← N'EXISTE PAS dans MOSIP.
+#     Verhoeff est codé en dur dans kernel-idgenerator-service :
+#     https://github.com/mosip/commons/tree/release-1.2.0/kernel/kernel-idgenerator-service
+#   iun.display.prefix / iun.display.pattern  ← non gérés par MOSIP.
+#     L'affichage SN-NNNN-NNNN-N relève de la couche d'intégration (3scale ou
+#     resident-services portal customisé), pas du kernel. À implémenter
+#     itération frontend.
 # ============================================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: iun-format-override
+  name: iun-format-audit
   namespace: mosip-dev
   labels:
     app.kubernetes.io/part-of: iun-platform
     iun.sn/dpg: mosip
-    iun.sn/purpose: uin-generator-override
+    iun.sn/purpose: audit-uin-overrides
   annotations:
     iun.sn/tor-ref: "§4.1.2, §4.1.3, §4.1.4"
-    iun.sn/status: "draft — clés à valider via mosip/mosip-config @ 1.2.1.0"
+    iun.sn/status: "informational — runtime overrides via config-server env-vars"
+    iun.sn/canonical-source: "mosip-config/application-default.properties @ master"
 data:
-  # Algorithme de contrôle : Verhoeff (impose TOR §4.1.4)
-  mosip.kernel.idgenerator.uin.check-digit-algorithm: "VERHOEFF"
-
-  # Longueur totale de l'UIN/IUN : 9 chiffres (8 aléatoires + 1 Verhoeff)
+  # -- Longueur IUN — override Sénégal (TOR §4.1.3 : 9 chiffres)
+  # Défaut MOSIP = 10 → on ramène à 9. Le 9ᵉ chiffre EST le check digit
+  # Verhoeff (les 8 premiers sont aléatoires, le 9ᵉ est calculé).
   mosip.kernel.uin.length: "9"
 
-  # Préfixe d'affichage citoyen (TOR §4.1.2) — purement présentation, non stocké
-  # MOSIP n'a pas, à ma connaissance, une clé native pour le préfixe d'affichage.
-  # Cette clé est posée ici comme HINT pour la couche Resident Services et la
-  # couche d'intégration. À reconfirmer.
-  iun.display.prefix: "SN"
+  # -- Algorithme de contrôle (NON CONFIGURABLE — informatif)
+  # Verhoeff est hardcodé dans kernel-idgenerator-service.
+  _doc.check-digit-algorithm: "VERHOEFF (hardcoded in kernel-idgenerator-service)"
 
-  # Format de découpage pour l'affichage : NNNN-NNNN-N (4-4-1)
-  iun.display.pattern: "####-####-#"
+  # -- Pool initial sandbox dev (vs 500000 en prod)
+  mosip.kernel.uin.uins-to-generate:    "1000"
+  mosip.kernel.uin.min-unused-threshold: "100"
 
-  # Politique de stockage : SHA-256 du IUN, jamais en clair (TOR §4.1.2)
-  # Cette clé est INFORMATIONNELLE — la mise en œuvre effective passe par
-  # le module kernel-cryptomanager et les modules de persistence.
-  iun.storage.hash-algorithm: "SHA-256"
+  # -- Filtres anti-patterns
+  # ⚠ Ces seuils sont CALIBRÉS UPSTREAM pour length=10. À length=9, on a
+  # réduit reverse-digits-limit et digits-limit de 5→4 pour éviter qu'ils
+  # rejettent trop d'IDs (voir README §Risques).
+  mosip.kernel.uin.length.sequence-limit:                  "3"
+  mosip.kernel.uin.length.repeating-block-limit:           "2"
+  mosip.kernel.uin.length.repeating-limit:                 "2"
+  mosip.kernel.uin.length.reverse-digits-limit:            "4"
+  mosip.kernel.uin.length.digits-limit:                    "4"
+  mosip.kernel.uin.length.conjugative-even-digits-limit:   "3"
+  mosip.kernel.uin.not-start-with:                         "0,1"
+  mosip.kernel.uin.restricted-numbers:                     "786,666"
+
+  # -- Re-seed crypto RNG (défaut MOSIP — 45 min)
+  mosip.idgen.uin.secure-random-reinit-frequency:          "45"
+
+  # -- Estimation espace d'IDs utiles à length=9 (extrapolation depuis
+  # https://docs.mosip.io/1.2.0/id-lifecycle-management/supporting-components/commons/id-generator)
+  # length=10 → ~164M IDs. length=9 ≈ ~16M IDs. Population Sénégal 2026 ≈ 18M.
+  # RISQUE : marge < 1×. À tracer en décision projet.
+  _doc.uin-address-space-estimate: "approx 16M valid UINs at length=9 (vs approx 18M population) — see README"

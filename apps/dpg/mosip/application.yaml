@@ -1,59 +1,71 @@
 # ============================================================================
-# Argo CD Application : MOSIP (Modular Open Source Identity Platform)
+# Argo CD Applications — MOSIP MVP IUN (itération 1)
 # ============================================================================
-# Rôle TOR §3.2 C2, §4.1, §4.3 — génération IUN 9 chiffres (Verhoeff),
-# authentification d'identité, déduplication biométrique, portails citoyen
-# et partenaire.
+# Objectif TOR §4.1.2 / §4.1.3 : démontrer la génération d'un IUN de 9 chiffres
+# avec dernier chiffre de contrôle Verhoeff valide. Verhoeff est CÂBLÉ EN DUR
+# dans kernel-idgenerator-service (https://github.com/mosip/commons/tree/
+# release-1.2.0/kernel/kernel-idgenerator-service) — on ne le configure pas,
+# on le constate.
 #
-# Source officielle : repo Helm `mosip/mosip-helm` (https://mosip.github.io/mosip-helm)
-# Stratégie d'inception : V3 deployment (Kubernetes/Helm, supporté depuis 1.2.0.1-B1).
+# Source canonique :
+#   - mosip-helm v1.2.0.4 (release 2026-03-24)
+#     https://github.com/mosip/mosip-helm/releases/tag/v1.2.0.4
+#   - Chart repo : helm repo add mosip https://mosip.github.io/mosip-helm
+#   - Ordre d'install : mosip-infra/deployment/v3/mosip/README.md @ v1.2.0.1
 #
-# Avertissement : MOSIP est composé de ~7 modules majeurs (kernel, registration,
-# pre-registration, ID-Authentication, partner-management, resident, admin) +
-# nombreuses dépendances (Postgres, Kafka, Keycloak, ABIS, HSM, MinIO, ...).
-# Cette Application Argo CD est volontairement un POINT D'ENTRÉE générique :
-# le déploiement réel se fait par PHASES, pas en un coup. Voir README.md de
-# ce dossier pour le séquencement.
+# Subset MVP (4 Applications) :
+#   1. mosip-bootstrap     → manifests/ (namespace, SCC, CNPG, ConfigMap, Kafka).
+#                            Sync-wave -10 (avant les charts qui en dépendent).
+#   2. mosip-config-server → Spring Cloud Config Server. Sync-wave 0.
+#   3. mosip-keymanager    → kernel-keymanager-service (signature kernel).
+#                            Sync-wave 10.
+#   4. mosip-kernel        → chart kernel (contient idgenerator + cryptomanager).
+#                            Sync-wave 20.
 #
-# La Application ci-dessous cible le chart `mosip-monitoring` à titre de
-# *probe* (chart utilitaire, déploiement léger) — un test d'amorçage du
-# chaînage Argo CD ↔ repo Helm MOSIP. Les Applications applicatives (kernel,
-# id-repository, registration-processor, etc.) seront ajoutées une à une,
-# avec leurs values Sénégal validées, dans des fichiers séparés par module.
+# Différé itération 2 : artifactory, websub, masterdata-loader, pre-reg,
+# id-repository, registration-processor, id-authentication, resident,
+# partner-management, ABIS, HSM Luna, Keycloak realm, Route TLS publique,
+# 3scale.
+#
+# ⚠ Les versions Helm ci-dessous (targetRevision) sont des PLACEHOLDERS alignés
+# sur le tag v1.2.0.4 de mosip-helm. Le Lead DOIT valider via :
+#   helm repo update mosip
+#   helm search repo mosip/kernel --versions | head
+# avant le premier sync. Si le `targetRevision` ne correspond pas au schéma
+# de version publié dans gh-pages (souvent `12.0.4` ou `1.2.0.4` selon chart),
+# remplacer ici.
 # ============================================================================
+
+---
+# ---------------------------------------------------------------------------
+# 1) mosip-bootstrap — manifests locaux (namespace, SCC, CNPG, ConfigMap, Kafka)
+# ---------------------------------------------------------------------------
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: mosip-bootstrap-probe
+  name: mosip-bootstrap
   namespace: iun-gitops
   labels:
-    app.kubernetes.io/name: mosip
+    app.kubernetes.io/name: mosip-bootstrap
     app.kubernetes.io/part-of: iun-platform
     app.kubernetes.io/component: dpg-identity
     iun.sn/dpg: mosip
   annotations:
-    iun.sn/tor-ref: "§3.2 C2, §4.1, §4.3"
-    iun.sn/status: "bootstrap-probe — pas encore le déploiement applicatif"
+    argocd.argoproj.io/sync-wave: "-10"
+    iun.sn/tor-ref: "§3.2 C2, §4.1"
+    iun.sn/role: "Pre-requis cluster MOSIP — namespace + SCC + Postgres + ConfigMap"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: iun-platform
   source:
-    repoURL: https://mosip.github.io/mosip-helm
-    targetRevision: 0.0.1-develop  # ⚠ à figer après validation upstream — voir README §"Source officielle"
-    chart: mosip-monitoring
-    helm:
-      releaseName: mosip-bootstrap-probe
-      values: |
-        # Placeholder values — sera remplacé par values/dev.yaml côté valuesObject
-        # quand Application sera promue d'amorce à déploiement modulaire.
-        replicaCount: 1
+    repoURL: https://github.com/enguser-1/iun-gitops.git
+    targetRevision: HEAD
+    path: apps/dpg/mosip/manifests
   destination:
     server: https://kubernetes.default.svc
     namespace: mosip-dev
   syncPolicy:
-    # selfHeal = false volontairement : on valide chaque sync manuellement
-    # tant que la chaîne Argo CD ↔ MOSIP Helm n'est pas éprouvée sur ce cluster.
     automated:
       prune: false
       selfHeal: false
@@ -61,6 +73,165 @@ spec:
       - CreateNamespace=true
       - ServerSideApply=true
       - RespectIgnoreDifferences=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+  revisionHistoryLimit: 5
+
+---
+# ---------------------------------------------------------------------------
+# 2) mosip-config-server — Spring Cloud Config Server
+# ---------------------------------------------------------------------------
+# Sert les properties à tous les modules MOSIP via HTTP. Pointe sur un repo
+# Git public (mosip/mosip-config) ou notre fork "iun-sn-mosip-config".
+# En MVP itération 1 : on garde le repo upstream et on override
+# `mosip.kernel.uin.length` via une env-var injectée dans le pod config-server
+# (convention `overrides_*`). Détail dans values/dev-config-server.yaml.
+# ⚠ Version chart à valider via `helm search repo mosip/config-server --versions`.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mosip-config-server
+  namespace: iun-gitops
+  labels:
+    app.kubernetes.io/name: mosip-config-server
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    iun.sn/tor-ref: "§4.1.2 (overrides IUN length=9)"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: iun-platform
+  sources:
+    - repoURL: https://mosip.github.io/mosip-helm
+      chart: config-server
+      targetRevision: 12.0.1-B3  # PLACEHOLDER — voir README §Risques
+      helm:
+        releaseName: config-server
+        valueFiles:
+          - $values/apps/dpg/mosip/values/dev-config-server.yaml
+    - repoURL: https://github.com/enguser-1/iun-gitops.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mosip-dev
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+  revisionHistoryLimit: 5
+
+---
+# ---------------------------------------------------------------------------
+# 3) mosip-keymanager — kernel-keymanager-service (signature crypto kernel)
+# ---------------------------------------------------------------------------
+# kernel-idgenerator-service appelle keymanager-service pour signer ses
+# payloads de génération d'UIN — donc requis pour le MVP.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mosip-keymanager
+  namespace: iun-gitops
+  labels:
+    app.kubernetes.io/name: mosip-keymanager
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+    iun.sn/tor-ref: "§4.3.2 (crypto/signing — HSM Luna en prod, software keystore en dev)"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: iun-platform
+  sources:
+    - repoURL: https://mosip.github.io/mosip-helm
+      chart: keymanager
+      targetRevision: 12.0.1-B3  # PLACEHOLDER — voir README §Risques
+      helm:
+        releaseName: keymanager
+        valueFiles:
+          - $values/apps/dpg/mosip/values/dev-keymanager.yaml
+    - repoURL: https://github.com/enguser-1/iun-gitops.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mosip-dev
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+  revisionHistoryLimit: 5
+
+---
+# ---------------------------------------------------------------------------
+# 4) mosip-kernel — chart kernel (contient kernel-idgenerator-service)
+# ---------------------------------------------------------------------------
+# C'EST LE CHART QUI EXPOSE l'endpoint UIN generator interne :
+#   POST http://idgenerator.kernel.mosip-dev.svc.cluster.local/v1/idgenerator/uin
+# (cf. mosip-config/application-default.properties :
+#  mosip.kernel.idgenerator.url=http://idgenerator.kernel)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mosip-kernel
+  namespace: iun-gitops
+  labels:
+    app.kubernetes.io/name: mosip-kernel
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+    iun.sn/tor-ref: "§4.1.2, §4.1.3, §4.1.4 (UIN generator + Verhoeff)"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: iun-platform
+  sources:
+    - repoURL: https://mosip.github.io/mosip-helm
+      chart: kernel
+      targetRevision: 12.0.1-B3  # PLACEHOLDER — voir README §Risques
+      helm:
+        releaseName: kernel
+        valueFiles:
+          - $values/apps/dpg/mosip/values/dev.yaml
+    - repoURL: https://github.com/enguser-1/iun-gitops.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mosip-dev
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
     retry:
       limit: 3
       backoff:
