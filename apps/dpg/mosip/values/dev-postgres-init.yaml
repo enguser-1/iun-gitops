@@ -76,6 +76,7 @@ dbUserPasswords:
 ## su.secret.key: Default key 'postgres-password' if you install bitnami postgres within cluster.
 ## dml: whether dml is available to be loaded 0/1. Refer SQL scripts in module repos.
 databases:
+  mosip_master:
     enabled: true
     host: "mosip-postgres-rw.mosip-dev.svc.cluster.local"
     port: 5432
@@ -99,6 +100,7 @@ databases:
     dml: 0
     repoUrl: https://github.com/mosip/audit-manager.git
     branch: release-1.2.0.1
+  mosip_keymgr:
     enabled: true
     host: "mosip-postgres-rw.mosip-dev.svc.cluster.local"
     port: 5432
@@ -110,6 +112,7 @@ databases:
     dml: 1
     repoUrl: https://github.com/mosip/keymanager.git
     branch: release-1.2.0.1
+  mosip_kernel:
     enabled: true
     host: "mosip-postgres-rw.mosip-dev.svc.cluster.local"
     port: 5432
