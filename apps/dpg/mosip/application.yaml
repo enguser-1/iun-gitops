@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # Argo CD Applications — MOSIP MVP IUN (itération 1 — étendue v2)
 # ============================================================================
 # Objectif TOR §4.1.2 / §4.1.3 : génération d'un IUN 9 chiffres + Verhoeff.
@@ -18,6 +18,7 @@
 #   helm search repo mosip/<chart> --versions | head
 # ============================================================================
 ---
+
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -51,6 +52,7 @@ spec:
     retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
   revisionHistoryLimit: 5
 ---
+
 # mosip-global — ConfigMap `global` cluster-wide (manifeste, PAS chart Helm).
 # Source upstream : https://github.com/mosip/k8s-infra/blob/main/mosip/global_configmap.yaml.sample
 apiVersion: argoproj.io/v1alpha1
@@ -85,6 +87,7 @@ spec:
     retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
   revisionHistoryLimit: 5
 ---
+
 # mosip-artifactory — chart mosip/artifactory. Produit CM `artifactory-share`.
 # Ref : https://github.com/mosip/artifactory-ref-impl
 apiVersion: argoproj.io/v1alpha1
@@ -126,6 +129,7 @@ spec:
     retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
   revisionHistoryLimit: 5
 ---
+
 # mosip-softhsm-kernel — chart mosip/softhsm avec releaseName=softhsm-kernel.
 # Produit CM `softhsm-kernel-share`. DEV ONLY. Migration HSM Luna pré-staging.
 apiVersion: argoproj.io/v1alpha1
@@ -149,7 +153,7 @@ spec:
   sources:
     - repoURL: https://mosip.github.io/mosip-helm
       chart: softhsm
-      targetRevision: 12.0.4  # PLACEHOLDER — valider avant push
+      targetRevision: 12.0.2  # PLACEHOLDER — valider avant push
       helm:
         releaseName: softhsm-kernel
         valueFiles:
@@ -168,6 +172,7 @@ spec:
     retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
   revisionHistoryLimit: 5
 ---
+
 # mosip-config-server — Spring Cloud Config Server. Wave rebumpée 0 -> 10.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -207,6 +212,7 @@ spec:
     retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
   revisionHistoryLimit: 5
 ---
+
 # mosip-keymanager — kernel-keymanager-service. Wave rebumpée 10 -> 20.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -246,6 +252,7 @@ spec:
     retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
   revisionHistoryLimit: 5
 ---
+
 # mosip-idgenerator — kernel-idgenerator-service (UIN MVP). Wave 20 (parallèle keymanager).
 # Argo CD attend Healthy de keymanager+idgenerator avant wave suivant. Transient
 # CrashLoop côté idgenerator est attendu pendant 30-60s.
@@ -295,6 +302,7 @@ e: mosip-dev
     retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
   revisionHistoryLimit: 5
 ---
+
 # mosip-idgenerator — kernel-idgenerator-service (UIN MVP). Wave 20 (parallèle keymanager).
 # Argo CD attend Healthy de keymanager+idgenerator avant wave suivant. Transient
 # CrashLoop côté idgenerator est attendu pendant 30-60s (dépendance signature).
