@@ -220,7 +220,7 @@ spec:
       chart: idgenerator
       targetRevision: 12.0.2  # PLACEHOLDER — voir README §Risques
       helm:
-        releaseName: kernel
+        releaseName: idgenerator
         valueFiles:
           - $values/apps/dpg/mosip/values/dev.yaml
     - repoURL: https://github.com/enguser-1/iun-gitops.git
