@@ -1,0 +1,65 @@
+# ============================================================================
+# values dev — pseudo-chart "global" (PAS UN VRAI CHART HELM)
+# ============================================================================
+# ⚠⚠⚠ IMPORTANT — LIRE AVANT D'UTILISER ⚠⚠⚠
+#
+# CE FICHIER N'EST PAS CONSOMMÉ PAR UN CHART HELM dans l'itération courante.
+#
+# Pourquoi : la ConfigMap `global` MOSIP n'est PAS distribuée comme chart Helm
+# dans mosip-helm. Elle est publiée sous forme de MANIFESTE K8s pur dans
+# https://github.com/mosip/k8s-infra/blob/main/mosip/global_configmap.yaml.sample
+# qu'on adapte puis qu'on applique tel quel (kubectl apply -f).
+#
+# Notre Application Argo CD `mosip-global` (sync-wave 5) pointe donc sur le
+# sous-dossier `apps/dpg/mosip/manifests/global-configmap/` qui contient le
+# ConfigMap concret — PAS sur un chart Helm avec values.
+#
+# CE FICHIER reste créé pour :
+#   1. Cohérence de nommage avec les autres values/dev-*.yaml.
+#   2. Documenter les CLÉS attendues dans la ConfigMap `global` au cas où
+#      l'opérateur veut modifier des valeurs (sert de référence lisible).
+#   3. Préparer une éventuelle bascule future vers un chart wrapper local
+#      (si on décide d'embarquer la ConfigMap `global` dans un chart MOSIP-IUN
+#      custom pour ne plus dépendre du manifeste plat).
+#
+# Source des valeurs : k8s-infra/main/mosip/global_configmap.yaml.sample
+# + overrides spécifiques IUN Sénégal.
+# ============================================================================
+
+# -- Hostnames cluster MOSIP (placeholder dev — pas de DNS public)
+# En prod ces hostnames sont les FQDNs publics (api.iun.sn, etc.). En dev
+# sandbox on utilise les Services internes via *.svc.cluster.local.
+hostnames:
+  # API gateway interne (consommée par les modules cluster-internal)
+  mosipApiInternalHost: "api-internal.mosip-dev.svc.cluster.local"
+  # API gateway publique — pour MVP itération 1, identique à l'internal
+  # (pas de Route exposée). À l'itération 2, switch sur api.iun.sn.
+  mosipApiHost: "api-internal.mosip-dev.svc.cluster.local"
+  # Pre-registration host — non utilisé MVP UIN
+  mosipPreregHost: "api-internal.mosip-dev.svc.cluster.local"
+
+# -- Pins HSM (DEV ONLY — doivent matcher dev-softhsm-kernel.yaml)
+# Ces clés sont injectées dans la CM `global` car certains modules MOSIP
+# (notamment keymanager) lisent le pin SoftHSM depuis `global` plutôt que
+# depuis la ConfigMap `softhsm-kernel-share`. Conserver les DEUX endroits
+# synchronisés pour éviter les bugs subtils.
+softhsm:
+  kernelPin: "iun-dev-pin"     # ⚠ MUST MATCH values/dev-softhsm-kernel.yaml::securityPIN
+  idaPin: ""                   # IDA non déployé MVP — laisser vide
+
+# -- Namespaces MOSIP cluster (ConfigMap `global` les référence pour cross-ns)
+namespaces:
+  mosipKernel: mosip-dev       # tout dans mosip-dev pour le MVP
+  mosipKeymanager: mosip-dev
+  mosipArtifactory: mosip-dev
+  mosipConfigServer: mosip-dev
+
+# -- IUN format overrides (intégration TOR Sénégal — voir manifests/configmap-iun-format.yaml)
+# ⚠ Ces clés sont DUPLIQUÉES dans la ConfigMap `iun-format-audit` (audit trail)
+# et dans values/dev-config-server.yaml (overrides runtime). Source de vérité
+# applicative = config-server. La présence ici sert de DOCUMENTATION qu'on
+# pourrait, à terme, faire converger sur la CM `global` une fois qu'un chart
+# wrapper existera.
+iunFormat:
+  uinLength: "9"
+  checkDigitAlgorithm: "VERHOEFF (hardcoded in kernel-idgenerator-service)"

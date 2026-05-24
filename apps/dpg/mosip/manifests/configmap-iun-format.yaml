@@ -14,6 +14,19 @@
 # documente, à un endroit lisible par `oc get cm`, quelles sont les
 # surcharges Sénégal attendues. Pas de couplage runtime.
 #
+# ----------------------------------------------------------------------------
+# Cohabitation avec la ConfigMap `global` (créée par mosip-global, wave 5) :
+# ----------------------------------------------------------------------------
+# - `global`            → consommée en envFrom par TOUS les pods MOSIP.
+#                          Contient hostnames, pins HSM, profils Spring.
+#                          PAS de propriétés UIN format dedans.
+# - `iun-format-audit`  → CETTE ConfigMap. Audit/doc IUN format Sénégal.
+#                          PAS de couplage runtime (informationnelle).
+# Les deux NE SE CHEVAUCHENT PAS (clés disjointes). Conservation des deux
+# justifiée : `global` est upstream-canonical et obligatoire, `iun-format-audit`
+# est notre traçabilité d'override TOR.
+# ----------------------------------------------------------------------------
+#
 # Clés CANONIQUES validées contre
 # https://github.com/mosip/mosip-config/blob/master/application-default.properties :
 #   mosip.kernel.uin.length         = 9    (override Sénégal — défaut MOSIP = 10)

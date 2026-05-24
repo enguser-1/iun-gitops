@@ -1,0 +1,93 @@
+# ============================================================================
+# ConfigMap MOSIP `global` — cluster-wide config (sync-wave 5)
+# ============================================================================
+# Source upstream : https://github.com/mosip/k8s-infra/blob/main/mosip/global_configmap.yaml.sample
+#
+# CETTE ConfigMap est consommée en envFrom par TOUS les pods applicatifs
+# MOSIP (config-server, keymanager, idgenerator, etc.). Sans elle, les pods
+# restent en CreateContainerConfigError — c'est précisément la brèche qui
+# a coûté 3h47 de debug lors du premier sync v1.
+#
+# Contenu canonique (extrait du sample upstream, adapté Sénégal sandbox) :
+#   - Hostnames cluster-wide MOSIP (mosip-api-host, mosip-api-internal-host…)
+#   - Pins HSM (softhsm.kernel.security.pin, softhsm.ida.security.pin)
+#   - Domaines partagés (URLs internes des modules)
+#
+# ⚠ DEV ONLY :
+#   - Les hostnames pointent sur des Services internes mosip-dev (pas de DNS
+#     public). À l'itération 2 quand on exposera une Route TLS, basculer sur
+#     api.iun.sn.
+#   - Le pin SoftHSM est en clair. Acceptable en dev sandbox uniquement.
+#     Doit MATCHER values/dev-softhsm-kernel.yaml::securityPIN.
+#
+# Si tu modifies des valeurs ici, MIRROR aussi dans values/dev-global.yaml
+# (qui est le pendant documentaire/référence opérateur).
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: global
+  namespace: mosip-dev
+  labels:
+    app.kubernetes.io/name: mosip-global
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+    iun.sn/purpose: cluster-wide-config
+  annotations:
+    iun.sn/tor-ref: "§4.1"
+    iun.sn/canonical-source: "k8s-infra/main/mosip/global_configmap.yaml.sample"
+    iun.sn/dette-technique: "softhsm.*.security.pin en clair — DEV ONLY, migration HSM Luna pré-staging"
+data:
+  # --------------------------------------------------------------------------
+  # Hostnames cluster MOSIP (dev = Services internes svc.cluster.local)
+  # --------------------------------------------------------------------------
+  # En prod : api.iun.sn (Route TLS publique exposée par 3scale). En dev MVP :
+  # pas de DNS — les modules s'appellent entre eux via le DNS K8s.
+  mosip-api-host: "api-internal.mosip-dev.svc.cluster.local"
+  mosip-api-internal-host: "api-internal.mosip-dev.svc.cluster.local"
+  mosip-prereg-host: "api-internal.mosip-dev.svc.cluster.local"
+  mosip-admin-host: "api-internal.mosip-dev.svc.cluster.local"
+  mosip-regclient-host: "api-internal.mosip-dev.svc.cluster.local"
+  mosip-resident-host: "api-internal.mosip-dev.svc.cluster.local"
+  mosip-iam-external-host: "keycloak.mosip-dev.svc.cluster.local"
+  mosip-iam-internal-host: "keycloak.mosip-dev.svc.cluster.local"
+
+  # --------------------------------------------------------------------------
+  # SoftHSM pins (DEV ONLY) — DOIVENT MATCHER values/dev-softhsm-kernel.yaml
+  # --------------------------------------------------------------------------
+  # keymanager lit cette property au boot pour ouvrir les tokens SoftHSM.
+  # Mismatch → keymanager CrashLoop avec "CKR_PIN_INCORRECT".
+  softhsm.kernel.security.pin: "iun-dev-pin"
+  # IDA non déployé MVP — placeholder pour éviter ${UNRESOLVED} dans les
+  # properties lues par les modules au boot.
+  softhsm.ida.security.pin: "iun-dev-pin"
+
+  # --------------------------------------------------------------------------
+  # Domaines partagés (cross-namespace références)
+  # --------------------------------------------------------------------------
+  # Le MVP loge TOUT dans mosip-dev → ces clés pointent toutes sur le même ns.
+  # À l'itération 2 (séparation kernel/ida), ces valeurs divergeront.
+  mosip-namespace-kernel: "mosip-dev"
+  mosip-namespace-keymanager: "mosip-dev"
+  mosip-namespace-artifactory: "mosip-dev"
+  mosip-namespace-config-server: "mosip-dev"
+
+  # --------------------------------------------------------------------------
+  # URLs internes des services MOSIP cluster-internal
+  # --------------------------------------------------------------------------
+  mosip-config-server-url: "http://config-server.mosip-dev.svc.cluster.local:51000/config"
+  mosip-artifactory-url: "http://artifactory.mosip-dev.svc.cluster.local:8080"
+
+  # --------------------------------------------------------------------------
+  # Profil Spring actif (lu par tous les services Spring Boot MOSIP)
+  # --------------------------------------------------------------------------
+  # `default` = upstream mosip-config branche master. Quand on forkera dans
+  # iun-sn-mosip-config, basculer sur `iun-sn-dev`.
+  spring-profiles-active: "default"
+  activeProfileEnv: "default"
+
+  # --------------------------------------------------------------------------
+  # Logging level cluster-wide (DEBUG en dev pour faciliter le debug initial)
+  # --------------------------------------------------------------------------
+  logging-level-root: "INFO"
+  logging-level-mosip: "DEBUG"

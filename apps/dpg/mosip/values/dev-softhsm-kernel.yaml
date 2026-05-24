@@ -1,0 +1,98 @@
+# ============================================================================
+# values dev — chart `softhsm` (release name `softhsm-kernel`)
+# ============================================================================
+# Consommé par l'Application Argo CD `mosip-softhsm-kernel` (sync-wave 7).
+#
+# Rôle : SoftHSM2 logiciel pour la crypto du module kernel (signature,
+# dérivation de clés). En PROD remplacé par HSM Luna FIPS 140-2 L3 (TOR §4.3.2).
+#
+# PRODUIT la ConfigMap `softhsm-kernel-share` (nommée d'après la convention
+# `<release>-share`, référencée en envFrom par keymanager). Le pin SoftHSM
+# y est stocké en clair — DEV ONLY.
+#
+# ⚠⚠⚠ DETTE TECHNIQUE — À ARRACHER AVANT STAGING ⚠⚠⚠
+#   - Pin/SO password = "iun-dev-pin" stocké EN CLAIR dans la CM.
+#     INACCEPTABLE en prod. Migration HSM Luna obligatoire (PIN dans HSM,
+#     pas dans Kubernetes).
+#   - Clés stockées sur PVC RWO (pas de réplication, pas de FIPS L3, pas
+#     d'attestation matérielle). N'a AUCUNE valeur cryptographique au sens
+#     prod.
+#   - À tracker dans backlog itération 3 (HSM Luna).
+# ============================================================================
+
+image:
+  pullPolicy: IfNotPresent
+
+# -- Persistence — PVC pour /softhsm/tokens (clés générées)
+# Storage class ODF Ceph RBD. RWO uniquement (ne pas changer en RWX — softhsm
+# n'est pas multi-writer safe, et AWS EBS ne supporte pas RWM cf.
+# https://github.com/mosip/mosip-infra/blob/v1.2.0.2/deployment/v3/external/hsm/softhsm/README.md).
+persistence:
+  enabled: true
+  storageClass: ocs-storagecluster-ceph-rbd
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  mountPath: /softhsm/tokens
+
+# -- Replication factor (cf. README upstream — toujours 1, pas négociable)
+replicaCount: 1
+
+# -- Security PIN SoftHSM — DEV ONLY
+# Cette valeur est consommée par keymanager via la property `softhsm.kernel.security.pin`
+# (résolue dans config-server). En prod cette clé pointe sur un Secret monté
+# depuis Vault + le HSM Luna utilise son propre PIN matériel.
+#
+# ⚠ Si tu changes cette valeur, tu DOIS aussi mettre à jour la même valeur
+# dans values/dev-config-server.yaml (override `softhsm_kernel_security_pin`).
+# Sinon keymanager n'arrive plus à ouvrir les tokens SoftHSM.
+securityPIN: "iun-dev-pin"
+# SO PIN (Security Officer — autorise la création de tokens). Même criticité
+# que securityPIN. À NE JAMAIS reprendre en prod.
+soPIN: "iun-dev-so-pin"
+
+# -- Ressources sandbox dev (softhsm = process userspace ~50Mi)
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# -- Service interne — softhsm n'expose RIEN au réseau (les clients PKCS#11
+# parlent à la lib `libsofthsm2.so` chargée DANS le pod keymanager via un
+# initContainer qui copie les tokens). Le Service existe seulement pour les
+# scripts de backup/restore depuis console.
+service:
+  type: ClusterIP
+  port: 9020
+
+# -- ConfigMap `softhsm-kernel-share` produite par le chart
+# Comme pour artifactory : convention `<release>-share`. NE PAS désactiver.
+configmap:
+  create: true
+  name: softhsm-kernel-share
+
+# -- Probes (basiques — softhsm n'a pas de healthcheck HTTP natif)
+probes:
+  readiness:
+    exec:
+      command: ["ls", "/softhsm/tokens"]
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  liveness:
+    exec:
+      command: ["ls", "/softhsm/tokens"]
+    initialDelaySeconds: 30
+    periodSeconds: 30
+
+# -- Security context OpenShift
+# softhsm a besoin de RW sur /softhsm/tokens (fsGroup propage les permissions).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+serviceAccount:
+  create: true
+  name: mosip-softhsm-kernel

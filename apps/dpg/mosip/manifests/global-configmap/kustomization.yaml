@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# ============================================================================
+# manifests/global-configmap/kustomization.yaml
+# ============================================================================
+# Référencé par l'Application Argo CD `mosip-global` (sync-wave 5).
+# Sync UN SEUL manifeste : la ConfigMap cluster-wide MOSIP `global`.
+#
+# Pourquoi un sous-dossier dédié plutôt que les manifests/ globaux ?
+# → Permet à Argo CD de cibler EXCLUSIVEMENT ce manifeste sans interférer
+# avec mosip-bootstrap (qui sync tout manifests/) ni dupliquer le sync.
+# (Si on déclarait global-configmap dans manifests/ racine, mosip-bootstrap
+# au wave -10 le créerait TROP TÔT — avant que les chart-prérequis aient eu
+# l'occasion d'écrire des CRs qui en dépendent dans l'ordre canonique.)
+# ============================================================================
+namespace: mosip-dev
+
+resources:
+  - configmap-global.yaml

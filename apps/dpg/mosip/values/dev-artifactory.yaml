@@ -1,0 +1,92 @@
+# ============================================================================
+# values dev — chart `artifactory` (mosip-helm v1.2.0.4)
+# ============================================================================
+# Consommé par l'Application Argo CD `mosip-artifactory` (sync-wave 6).
+#
+# Rôle : file server interne au cluster qui distribue les artefacts runtime
+# MOSIP — mock keys (dev), ID schemas, application-default properties,
+# JARs BioSDK, etc. Image upstream : mosipid/artifactory-server (cf.
+# https://github.com/mosip/artifactory-ref-impl).
+#
+# PRODUIT la ConfigMap `artifactory-share` (référencée en envFrom par
+# keymanager et idgenerator dans leur descripteur de Pod).
+#
+# ⚠ DEV ONLY warnings :
+#   - Les "artefacts" servis par artifactory en dev contiennent des MOCK KEYS
+#     non-production (pré-générées par mosip/artifactory-ref-impl/master).
+#     En staging/prod, le Lead crypto produit ses propres artefacts signés
+#     avec les vraies clés Luna et publie via un artifactory dédié.
+#   - Le PVC artifactory est RWO (ReadWriteOnce) — pas de réplication. Si le
+#     node hôte tombe, artifactory n'est plus accessible jusqu'à reschedule.
+#     Acceptable en dev sandbox.
+# ============================================================================
+
+image:
+  pullPolicy: IfNotPresent
+
+# -- Persistence — PVC pour stocker les artefacts (ID schemas, mock keys…)
+# Storage class ODF Ceph RBD (déjà validée par Test-IUNCluster.ps1).
+persistence:
+  enabled: true
+  storageClass: ocs-storagecluster-ceph-rbd
+  accessMode: ReadWriteOnce
+  size: 5Gi
+  # Mount point standard MOSIP — ne pas modifier (le pod artifactory s'attend
+  # à /home/mosip/artifactory côté image upstream).
+  mountPath: /home/mosip/artifactory
+
+# -- Ressources sandbox dev (artifactory est un simple file server — peu gourmand)
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 512Mi
+
+# -- Service interne (port standard MOSIP artifactory)
+service:
+  type: ClusterIP
+  port: 8080
+
+# -- Pas d'Ingress / Route (interne uniquement — accédé par les pods MOSIP
+# en cluster-local via http://artifactory.mosip-dev.svc:8080)
+ingress:
+  enabled: false
+
+# -- ConfigMap `artifactory-share` produite par le chart
+# Le chart upstream nomme cette CM `<release>-share` par convention. Ici
+# releaseName=artifactory → CM `artifactory-share`. Vérifié contre la
+# référence d'envFrom dans les charts keymanager + idgenerator.
+configmap:
+  # NE PAS désactiver — sinon keymanager+idgenerator restent en
+  # CreateContainerConfigError. C'est précisément la brèche qui a coûté
+  # 3h47 de debug lors du premier sync v1.
+  create: true
+  name: artifactory-share
+
+# -- Replicas — 1 en dev (sandbox partagé)
+replicaCount: 1
+
+# -- Probes
+probes:
+  readiness:
+    httpGet:
+      path: /actuator/health/readiness
+      port: 8080
+    initialDelaySeconds: 30
+  liveness:
+    httpGet:
+      path: /actuator/health/liveness
+      port: 8080
+    initialDelaySeconds: 60
+
+# -- Security context OpenShift (artifactory tourne en non-root UID 1001)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+serviceAccount:
+  create: true
+  name: mosip-artifactory
