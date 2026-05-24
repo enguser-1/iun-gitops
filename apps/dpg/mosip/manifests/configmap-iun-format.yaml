@@ -1,0 +1,59 @@
+# ============================================================================
+# ConfigMap : MOSIP UIN (= IUN au Sénégal) — format 9 chiffres + Verhoeff
+# ============================================================================
+# Rôle TOR §4.1.2 + §4.1.3 + §4.1.4 :
+#   - 8 chiffres aléatoires + 1 chiffre de contrôle Verhoeff (théorie des
+#     groupes diédraux)
+#   - Affichage citoyen sous la forme SN-NNNN-NNNN-N (préfixe non stocké)
+#   - Stockage uniquement sous forme de hash SHA-256
+#
+# Clé canonique MOSIP (kernel-config) :
+#   mosip.kernel.idgenerator.uin.check-digit-algorithm = VERHOEFF
+#   mosip.kernel.uin.length = 9
+#
+# ⚠ AVERTISSEMENT — clés à VALIDER contre la doc MOSIP 1.2.x officielle
+# avant le premier déploiement applicatif. Les noms exacts dans les ConfigMap
+# kernel/registration-config peuvent différer selon la version retenue
+# (kernel-config vs registration-processor-config vs uin-generator-config).
+# TODO :
+#   1. Cloner mosip/mosip-config @ release-1.2.1.0 et vérifier les clés
+#      effectivement consommées par le module uingenerator du kernel.
+#   2. Identifier si la ConfigMap doit s'appeler `kernel-uin-generator-config`
+#      ou être merge dans `kernel-config` (selon le chart Helm).
+#   3. Cette ConfigMap est PROBE — elle ne sera consommée qu'après que
+#      l'Application MOSIP applicative (kernel) sera déployée.
+#
+# Référence canonique : https://github.com/mosip/mosip-config
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iun-format-override
+  namespace: mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+    iun.sn/purpose: uin-generator-override
+  annotations:
+    iun.sn/tor-ref: "§4.1.2, §4.1.3, §4.1.4"
+    iun.sn/status: "draft — clés à valider via mosip/mosip-config @ 1.2.1.0"
+data:
+  # Algorithme de contrôle : Verhoeff (impose TOR §4.1.4)
+  mosip.kernel.idgenerator.uin.check-digit-algorithm: "VERHOEFF"
+
+  # Longueur totale de l'UIN/IUN : 9 chiffres (8 aléatoires + 1 Verhoeff)
+  mosip.kernel.uin.length: "9"
+
+  # Préfixe d'affichage citoyen (TOR §4.1.2) — purement présentation, non stocké
+  # MOSIP n'a pas, à ma connaissance, une clé native pour le préfixe d'affichage.
+  # Cette clé est posée ici comme HINT pour la couche Resident Services et la
+  # couche d'intégration. À reconfirmer.
+  iun.display.prefix: "SN"
+
+  # Format de découpage pour l'affichage : NNNN-NNNN-N (4-4-1)
+  iun.display.pattern: "####-####-#"
+
+  # Politique de stockage : SHA-256 du IUN, jamais en clair (TOR §4.1.2)
+  # Cette clé est INFORMATIONNELLE — la mise en œuvre effective passe par
+  # le module kernel-cryptomanager et les modules de persistence.
+  iun.storage.hash-algorithm: "SHA-256"

@@ -1,18 +1,29 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# Overlay dev (Approche B) : agrège uniquement les Applications IUN-spécifiques.
-# Les Operators socle sont prérequis externes (déjà installés par d'autres équipes
-# sur ce cluster partagé) — ils ne sont pas gérés par notre Argo CD.
+# ============================================================================
+# Overlay dev — Approche DPG (pivot 2026-05-24)
+# ============================================================================
+# Agrège les Applications Argo CD des 3 DPG (MOSIP, OpenCRVS, OpenIMIS).
+# Les Operators socle (OCP GitOps, RHBK, CNPG, AMQ Streams, ODF, etc.)
+# restent des prérequis externes : ils sont installés cluster-wide par
+# d'autres équipes et NE sont PAS gérés par notre instance Argo CD dédiée.
+# ============================================================================
 namespace: iun-gitops
+
 resources:
-  - ../../apps/iun
-# Exemple de patch dev (replicas réduits) à ajouter quand des Applications seront
-# présentes dans apps/iun :
+  - ../../apps/dpg/mosip
+  - ../../apps/dpg/opencrvs
+  - ../../apps/dpg/openimis
+
+# Exemples de patches dev (à activer quand les Applications consommeront
+# values/dev.yaml côté Helm) :
 # patches:
 #   - target:
-#       kind: Cluster
-#       name: iun-postgres
+#       kind: Application
+#       name: mosip-bootstrap-probe
 #     patch: |-
 #       - op: replace
-#         path: /spec/instances
-#         value: 1
+#         path: /spec/source/helm/values
+#         value: |
+#           global:
+#             profile: sandbox

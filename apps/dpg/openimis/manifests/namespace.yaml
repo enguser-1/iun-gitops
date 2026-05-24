@@ -1,0 +1,16 @@
+# ============================================================================
+# Namespace openimis-dev — environnement de développement OpenIMIS
+# ============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openimis-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: openimis
+    iun.sn/env: dev
+    istio-injection: disabled  # voir note dans mosip-dev/namespace.yaml
+    openshift.io/cluster-logging: "true"
+  annotations:
+    openshift.io/description: "OpenIMIS DPG — environnement dev (TOR §3.2 C3, §4.4)"
+    openshift.io/display-name: "OpenIMIS — dev"

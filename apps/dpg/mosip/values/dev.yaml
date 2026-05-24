@@ -1,0 +1,100 @@
+# ============================================================================
+# values dev — MOSIP (overrides Sénégal, environnement dev)
+# ============================================================================
+# Référencé par apps/dpg/mosip/application.yaml via spec.source.helm.valueFiles
+# (à activer quand on passera de la bootstrap-probe au déploiement modulaire).
+#
+# ⚠ Ce fichier est un SQUELETTE — les clés Helm réelles dépendent du chart
+# MOSIP retenu (kernel, registration-processor, id-authentication, etc.).
+# Chaque module MOSIP a son propre chart dans mosip/mosip-helm. À détailler
+# au moment du déploiement de chaque module.
+# ============================================================================
+
+# -- Configuration générale du déploiement
+global:
+  # Namespace cible (cohérent avec destination.namespace de l'Application)
+  namespace: mosip-dev
+
+  # Mode V3 (Kubernetes natif, supporté depuis MOSIP 1.2.0.1-B1)
+  deploymentMode: V3
+
+  # Active le profil "sandbox" en dev — moins de ressources, données de test.
+  # En staging/prod, basculer sur "production" avec ressources et HA full.
+  profile: sandbox
+
+# -- Image registry et tag (à figer après évaluation)
+image:
+  registry: docker.io
+  repository: mosipid
+  tag: 1.2.1.0  # À confirmer comme LTS stable au moment du déploiement
+  pullPolicy: IfNotPresent
+
+# -- Ressources (sandbox dev — à augmenter en staging/prod)
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+# -- Override IUN Sénégal : 9 chiffres + Verhoeff (TOR §4.1.3 / §4.1.4)
+# Ces clés sont injectées dans la ConfigMap kernel-uin-generator-config
+# (à confirmer selon le chart MOSIP applicatif).
+kernel:
+  uinGenerator:
+    length: 9
+    checkDigitAlgorithm: VERHOEFF
+    # Plage initiale d'UINs pré-générés pour dev (en prod : 1 million)
+    initialPoolSize: 1000
+
+# -- Persistence (volumes ODF en prod ; emptyDir en dev pour démarrer rapidement)
+persistence:
+  enabled: true
+  storageClass: ocs-storagecluster-ceph-rbd  # ODF block (présent sur le cluster)
+  size: 10Gi
+
+# -- ABIS biométrique (TOR §3.3.3) — non configuré en dev sandbox
+abis:
+  enabled: false
+  provider: ""  # tech5 | aware | idemia | mock (en dev : mock à activer pour PoC)
+
+# -- HSM (TOR §3.3.3 + §4.3.2 — Luna FIPS 140-2 L3) — non en dev
+hsm:
+  enabled: false
+  # En staging/prod : passer en true et pointer sur Vault HSM ou Luna direct.
+
+# -- Keycloak intégré (MOSIP embarque son propre Keycloak)
+# Décision à arbitrer : harmoniser sur RHBK déjà installé sur le cluster ?
+# Voir backlog dans README.md de ce dossier.
+keycloak:
+  enabled: true
+  external: false  # true = pointer sur RHBK ; false = Keycloak embarqué MOSIP
+
+# -- Connexion Kafka (AMQ Streams existant sur le cluster)
+kafka:
+  enabled: true
+  external: true
+  bootstrapServers: "iun-kafka-bootstrap.kafka.svc.cluster.local:9092"  # placeholder
+
+# -- Postgres (chart CNPG existant — à provisionner via une Application séparée)
+postgres:
+  enabled: true
+  external: true
+  host: "mosip-postgres-rw.mosip-data.svc.cluster.local"  # placeholder
+  port: 5432
+
+# -- OpenShift Route (vs Ingress upstream)
+# Le chart MOSIP utilise probablement Ingress par défaut ; sur OCP on préfère
+# la Route. À configurer via un patch Kustomize ou en exposant manuellement.
+ingress:
+  enabled: false  # désactivé pour laisser place à OpenShift Route
+
+# -- Sécurité OpenShift
+# MOSIP charts ont historiquement besoin de SCC `restricted-v2` voire `anyuid`
+# selon les modules — à valider au déploiement. NE PAS accorder `privileged`
+# globalement.
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault

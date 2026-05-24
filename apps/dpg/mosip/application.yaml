@@ -1,0 +1,70 @@
+# ============================================================================
+# Argo CD Application : MOSIP (Modular Open Source Identity Platform)
+# ============================================================================
+# Rôle TOR §3.2 C2, §4.1, §4.3 — génération IUN 9 chiffres (Verhoeff),
+# authentification d'identité, déduplication biométrique, portails citoyen
+# et partenaire.
+#
+# Source officielle : repo Helm `mosip/mosip-helm` (https://mosip.github.io/mosip-helm)
+# Stratégie d'inception : V3 deployment (Kubernetes/Helm, supporté depuis 1.2.0.1-B1).
+#
+# Avertissement : MOSIP est composé de ~7 modules majeurs (kernel, registration,
+# pre-registration, ID-Authentication, partner-management, resident, admin) +
+# nombreuses dépendances (Postgres, Kafka, Keycloak, ABIS, HSM, MinIO, ...).
+# Cette Application Argo CD est volontairement un POINT D'ENTRÉE générique :
+# le déploiement réel se fait par PHASES, pas en un coup. Voir README.md de
+# ce dossier pour le séquencement.
+#
+# La Application ci-dessous cible le chart `mosip-monitoring` à titre de
+# *probe* (chart utilitaire, déploiement léger) — un test d'amorçage du
+# chaînage Argo CD ↔ repo Helm MOSIP. Les Applications applicatives (kernel,
+# id-repository, registration-processor, etc.) seront ajoutées une à une,
+# avec leurs values Sénégal validées, dans des fichiers séparés par module.
+# ============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mosip-bootstrap-probe
+  namespace: iun-gitops
+  labels:
+    app.kubernetes.io/name: mosip
+    app.kubernetes.io/part-of: iun-platform
+    app.kubernetes.io/component: dpg-identity
+    iun.sn/dpg: mosip
+  annotations:
+    iun.sn/tor-ref: "§3.2 C2, §4.1, §4.3"
+    iun.sn/status: "bootstrap-probe — pas encore le déploiement applicatif"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: iun-platform
+  source:
+    repoURL: https://mosip.github.io/mosip-helm
+    targetRevision: 0.0.1-develop  # ⚠ à figer après validation upstream — voir README §"Source officielle"
+    chart: mosip-monitoring
+    helm:
+      releaseName: mosip-bootstrap-probe
+      values: |
+        # Placeholder values — sera remplacé par values/dev.yaml côté valuesObject
+        # quand Application sera promue d'amorce à déploiement modulaire.
+        replicaCount: 1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mosip-dev
+  syncPolicy:
+    # selfHeal = false volontairement : on valide chaque sync manuellement
+    # tant que la chaîne Argo CD ↔ MOSIP Helm n'est pas éprouvée sur ce cluster.
+    automated:
+      prune: false
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+  revisionHistoryLimit: 5

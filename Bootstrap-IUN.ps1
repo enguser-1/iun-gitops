@@ -451,4 +451,35 @@ Write-Log "Pour récupérer l'URL et le mot de passe admin Argo CD, exécute :" 
 Write-Log "    .\Get-ArgoCD-Admin.ps1   # défauts adaptés à l'instance iun-argocd / iun-gitops" -Level INFO
 
 if ($DryRun) {
-    Write-Log "Dry-run : récap des Applications igno
+    Write-Log "Dry-run : recap des Applications ignore (rien applique en mode dry-run)." -Level INFO
+}
+else {
+    try {
+        $apps = Get-OcJson -OcArgs @('get','applications.argoproj.io','-n', $ArgoNs)
+        if ($apps -and $apps.items) {
+            Write-Log ("Applications deployees ({0}) :" -f $apps.items.Count) -Level INFO
+            foreach ($app in $apps.items) {
+                $name   = $app.metadata.name
+                $sync   = if ($app.status.sync.status)   { $app.status.sync.status }   else { 'Unknown' }
+                $health = if ($app.status.health.status) { $app.status.health.status } else { 'Unknown' }
+                Write-Log ("  - {0,-30} sync={1,-10} health={2}" -f $name, $sync, $health) -Level INFO
+            }
+        }
+        else {
+            Write-Log "Aucune Application encore visible (sync en cours - OK premier run)." -Level INFO
+        }
+    }
+    catch {
+        Write-Log ("Lecture des Applications impossible : " + $_.Exception.Message) -Level WARN
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Conclusion
+# ---------------------------------------------------------------------------
+if ($script:HasFailed) {
+    Write-Log ("Bootstrap termine avec des erreurs. Voir le log : " + $LogFile) -Level ERROR
+    exit 1
+}
+Write-Log ("Bootstrap termine avec succes. Log : " + $LogFile) -Level OK
+exit 0

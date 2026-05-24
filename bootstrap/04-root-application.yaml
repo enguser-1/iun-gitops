@@ -1,19 +1,19 @@
 # ============================================================================
-# Bootstrap step 4 : Root Application (pattern "app-of-apps")  — Approche B
+# Bootstrap step 4 : Root Application (pattern "app-of-apps") — Stack DPG
 # ============================================================================
-# Choix de chaînage (Approche B, 2026-05-23) :
-#   Root Application  --> environments/<env>/  --> apps/iun/  --> (futures Apps)
+# Choix de chaînage (post-pivot DPG, 2026-05-24) :
+#   Root Application  --> environments/<env>/  --> apps/dpg/{mosip,opencrvs,openimis}/
 #
 # La Root pointe sur l'overlay env (environments/dev par défaut) et NON
-# directement sur apps/iun, pour conserver la capacité d'overlay Kustomize
-# par environnement (replicas, patches, etc.).
+# directement sur les Applications DPG, pour conserver la capacité d'overlay
+# Kustomize par environnement (values, patches, version pin, etc.).
 #
 # Bootstrap-IUN.ps1 patche dynamiquement metadata.name et source.path en
 # remplaçant `environments/dev` par `environments/<env>` selon -Environment.
 #
 # Hébergé dans l'instance Argo CD dédiée `iun-argocd` (namespace `iun-gitops`).
-# Ne gère QUE les ressources IUN-spécifiques — les Operators socle sont
-# prérequis externes (cf. README §0).
+# Ne gère QUE les Applications DPG + couche d'intégration (à venir). Les
+# Operators socle restent des prérequis externes (cf. README §0).
 # ============================================================================
 ---
 apiVersion: argoproj.io/v1alpha1

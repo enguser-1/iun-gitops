@@ -1,17 +1,25 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# Overlay prod (Approche B) : versions figées, installPlanApproval = Manual côté
-# Operators *si* on les gérait — mais ici on ne gère que les CR IUN
-# (Operators = prérequis externes, cf. apps/iun/README.md).
+# ============================================================================
+# Overlay prod — Approche DPG (pivot 2026-05-24)
+# ============================================================================
+# Iso-staging côté périmètre Applications, ressources et politiques figées
+# (revisionHistoryLimit augmenté, selfHeal toujours faux jusqu'à validation
+# manuelle de chaque promotion).
+# ============================================================================
 namespace: iun-gitops
+
 resources:
-  - ../../apps/iun
-# Patches typiques prod à activer quand des Applications seront présentes :
+  - ../../apps/dpg/mosip
+  - ../../apps/dpg/opencrvs
+  - ../../apps/dpg/openimis
+
+# Patches typiques prod (à activer en phase P3) :
 # patches:
 #   - target:
-#       kind: Cluster
-#       name: iun-postgres
+#       kind: Application
+#       name: mosip-bootstrap-probe
 #     patch: |-
 #       - op: replace
-#         path: /spec/instances
-#         value: 3
+#         path: /spec/source/targetRevision
+#         value: 1.2.1.0  # version LTS figée

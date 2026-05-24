@@ -15,7 +15,8 @@ kind: Kustomization
 #   - kafka-cluster  : Cluster Kafka IUN (via AMQ Streams déjà installé)
 #   - iun-api        : Deployment + Service + Route de l'API .NET
 #
-# À ce stade : liste vide. Les Applications seront ajoutées au fur et à mesure
-# que les composants IUN sont conteneurisés et prêts à être déployés.
+# Premiere Application : iun-api-hello (PoC validation chaine end-to-end).
+# Voir iun-api-hello.yaml pour le detail (repo iun-api, namespace iun-sandbox).
 # ============================================================================
-resources: []
+resources:
+  - iun-api-hello.yaml

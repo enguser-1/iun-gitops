@@ -1,0 +1,8 @@
+# ============================================================================
+# values prod — OpenIMIS (placeholder)
+# ============================================================================
+global:
+  environment: production
+  country: SN
+
+# TODO: phase P3/P4 — extension nationale + intégrations Trésor / Wave / Orange

@@ -1,0 +1,72 @@
+# ============================================================================
+# Argo CD Application : OpenCRVS (Open Civil Registration & Vital Statistics)
+# ============================================================================
+# Rôle TOR §3.2 C1, §4.2 — enregistrement des faits d'état civil (naissances,
+# décès, mariages), PWA hors-ligne wolof/pulaar, recherche phonétique
+# Elasticsearch, 46 départements sénégalais, déclaration tardive code de la
+# famille art. 54.
+#
+# Source officielle : `opencrvs/infrastructure` (Helm charts) + `opencrvs/opencrvs-core`
+# (microservices). Série de production courante : v1.9.x (latest v1.9.12).
+#
+# Stratégie d'inception : déploiement direct du chart `opencrvs` depuis la
+# branche release alignée avec la version core retenue. Recommandation
+# upstream : garder infrastructure et core sur la MÊME version.
+# ============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opencrvs-core
+  namespace: iun-gitops
+  labels:
+    app.kubernetes.io/name: opencrvs
+    app.kubernetes.io/part-of: iun-platform
+    app.kubernetes.io/component: dpg-civil-registration
+    iun.sn/dpg: opencrvs
+  annotations:
+    iun.sn/tor-ref: "§3.2 C1, §4.2"
+    iun.sn/status: "bootstrap — chart upstream à figer après évaluation"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: iun-platform
+  source:
+    # ⚠ opencrvs/infrastructure ne publie PAS sur un Helm repo CNCF/Bitnami :
+    # le chart est dans le repo Git. On utilise donc le path Helm sur tag Git.
+    repoURL: https://github.com/opencrvs/infrastructure
+    targetRevision: v1.9.12  # À FIGER après évaluation — voir README §Source officielle
+    path: infrastructure/helm-charts/dependencies  # ⚠ chemin à VÉRIFIER au clone
+    helm:
+      releaseName: opencrvs
+      # Les values pleines vivent dans values/dev.yaml (ce dossier).
+      # Argo CD ne supporte pas valueFiles externes au repo chart par défaut ;
+      # on inline donc les overrides critiques ici, et on déléguera le reste
+      # à un Application chaining quand la stack sera stabilisée.
+      values: |
+        # Override Sénégal — voir values/dev.yaml pour le détail
+        global:
+          environment: development
+          country: SN
+          locale:
+            primary: fr
+            secondary:
+              - wo  # wolof (TOR §4.2)
+              - ff  # pulaar (TOR §4.2)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: opencrvs-dev
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+  revisionHistoryLimit: 5

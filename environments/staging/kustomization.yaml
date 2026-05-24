@@ -1,8 +1,15 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# Overlay staging (Approche B) : iso-prod côté applications IUN, ressources
-# dimensionnées pour tests de charge.
-# Operators socle = prérequis externes (cf. apps/iun/README.md).
+# ============================================================================
+# Overlay staging — Approche DPG (pivot 2026-05-24)
+# ============================================================================
+# Iso-prod côté périmètre Applications, dimensionnement pour tests de charge
+# 50k TPS (TOR §5.5 P1) et pilote Dakar+Thiès 50k enrôlés (TOR §5.5 P2).
+# Operators socle = prérequis externes.
+# ============================================================================
 namespace: iun-gitops
+
 resources:
-  - ../../apps/iun
+  - ../../apps/dpg/mosip
+  - ../../apps/dpg/opencrvs
+  - ../../apps/dpg/openimis

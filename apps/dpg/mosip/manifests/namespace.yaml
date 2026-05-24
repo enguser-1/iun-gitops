@@ -1,0 +1,31 @@
+# ============================================================================
+# Namespace mosip-dev — environnement de développement MOSIP
+# ============================================================================
+# Créé via syncOptions=CreateNamespace=true par l'Application Argo CD MOSIP,
+# mais formellement déclaré ici pour porter les labels Service Mesh (Istio
+# injection), OpenShift Logging (Loki) et IUN platform.
+#
+# Note : sur OCP 4.x, le label `pod-security.kubernetes.io/enforce` n'est pas
+# strictement requis (PSA n'est pas l'option par défaut), mais on l'aligne sur
+# `restricted` pour rester ISO TOR §6.3 et anticiper un futur passage à K8s
+# upstream. À ajuster si certains pods MOSIP nécessitent `privileged` (à
+# documenter et justifier).
+# ============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+    iun.sn/env: dev
+    # Service Mesh injection (active si OSSM2 ou OSSM3 disponible — sur ce
+    # cluster, OSSM2 v2.6.15 est présent). Laisser `disabled` au démarrage
+    # tant que le SMMR n'inclut pas mosip-dev pour éviter une injection
+    # cassée. À basculer à `enabled` quand SMMR sera étendu.
+    istio-injection: disabled
+    # OpenShift Logging (Loki / Vector) — collecte des logs JSON
+    openshift.io/cluster-logging: "true"
+  annotations:
+    openshift.io/description: "MOSIP DPG — environnement dev (TOR §3.2 C2)"
+    openshift.io/display-name: "MOSIP — dev"

@@ -1,0 +1,16 @@
+# ============================================================================
+# Namespace opencrvs-dev — environnement de développement OpenCRVS
+# ============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: opencrvs
+    iun.sn/env: dev
+    istio-injection: disabled  # voir note dans mosip-dev/namespace.yaml
+    openshift.io/cluster-logging: "true"
+  annotations:
+    openshift.io/description: "OpenCRVS DPG — environnement dev (TOR §3.2 C1)"
+    openshift.io/display-name: "OpenCRVS — dev"

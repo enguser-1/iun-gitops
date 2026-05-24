@@ -1,0 +1,19 @@
+# ============================================================================
+# values staging — MOSIP (placeholder)
+# ============================================================================
+# Iso-prod côté topologie, dimensionné pour tests de charge 50k TPS (TOR §5.5 P1).
+# À détailler quand dev sera stabilisé et avant le pilote Dakar+Thiès (M5–M9).
+#
+# Différences attendues vs dev.yaml :
+#   - profile: production
+#   - replicas augmentés sur kernel/registration/id-auth
+#   - abis.enabled: true + provider réel
+#   - hsm.enabled: true (Luna FIPS L3)
+#   - persistence sizes x10
+#   - HPA activé sur les modules à forte charge
+# ============================================================================
+global:
+  profile: production
+  namespace: mosip-staging
+
+# TODO: à compléter avant pilote Dakar+Thiès (M5)

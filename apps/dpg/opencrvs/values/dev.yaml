@@ -1,0 +1,86 @@
+# ============================================================================
+# values dev — OpenCRVS (overrides Sénégal, environnement dev)
+# ============================================================================
+# Référence chart : opencrvs/infrastructure @ v1.9.12 (à reconfirmer).
+# Ce fichier est un SQUELETTE — la liste exhaustive des clés dépend du chart.
+# Voir documentation : https://documentation.opencrvs.org/setup/3.-installation/
+# ============================================================================
+
+global:
+  environment: development
+  country: SN  # Sénégal
+
+  # -- Langues officielles d'interface (TOR §4.2)
+  locale:
+    primary: fr        # français
+    secondary:
+      - wo             # wolof (TOR §4.2)
+      - ff             # pulaar (TOR §4.2)
+
+  # -- Découpage administratif (TOR §4.2 — 46 départements)
+  # La configuration des sites administratifs se fait via le module
+  # `opencrvs-countryconfig` (séparé du core). Voir backlog.
+  countryConfig:
+    name: senegal
+    repoURL: https://github.com/<TBD>/opencrvs-countryconfig-sn  # à créer / forker
+    branch: main
+
+# -- Mode hors-ligne (TOR §4.2 — PWA + IndexedDB + sync CRDT)
+pwa:
+  enabled: true
+  offlineMode: true
+  syncStrategy: crdt  # eventual consistency via Yjs/Automerge (à confirmer côté core)
+
+# -- Recherche phonétique wolof/français (TOR §4.2 + §4.11)
+search:
+  engine: elasticsearch
+  phoneticAlgorithm: doubleMetaphone  # vérifier compat wolof — peut nécessiter custom analyzer
+  languages:
+    - fr
+    - wo
+
+# -- Workflow déclaration tardive (TOR §4.2 + Code de la famille art. 54)
+declarations:
+  lateRegistration:
+    enabled: true
+    requiresWitness: true       # témoins requis (art. 54)
+    requiresCourtValidation: true  # tribunal d'instance
+    issueProvisionalNIA: true   # Numéro d'Identification d'Attente avant IUN définitif
+
+# -- Persistence (MongoDB, Elasticsearch, MinIO embarqués par défaut)
+persistence:
+  mongodb:
+    storageClass: ocs-storagecluster-ceph-rbd
+    size: 20Gi
+  elasticsearch:
+    storageClass: ocs-storagecluster-ceph-rbd
+    size: 30Gi
+  minio:
+    storageClass: ocs-storagecluster-ceph-rbd
+    size: 50Gi
+
+# -- Ressources (sandbox dev)
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+# -- Auth : intégration future avec RHBK ou MOSIP Resident Services
+# Par défaut, OpenCRVS embarque son propre IAM. À harmoniser à terme.
+auth:
+  external: false
+  # À basculer en true quand RHBK realm IUN sera configuré (voir backlog integration).
+
+# -- Intégration MOSIP : envoi des données d'état civil pour génération IUN
+# (TOR §3.4.1 — Enrôlement nouveau-né : OpenCRVS → MOSIP → OpenIMIS automatique)
+integrations:
+  mosip:
+    enabled: false  # activer en phase 2 quand kernel MOSIP sera up
+    endpoint: "http://mosip-id-repository.mosip-dev.svc.cluster.local:8080"
+
+# -- OpenShift Route (vs Ingress)
+ingress:
+  enabled: false  # on expose via Route OpenShift

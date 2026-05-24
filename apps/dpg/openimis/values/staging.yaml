@@ -1,0 +1,8 @@
+# ============================================================================
+# values staging — OpenIMIS (placeholder)
+# ============================================================================
+global:
+  environment: staging
+  country: SN
+
+# TODO: phase pilote — activation progressive CMU + PNBSF + IPRES + CSS

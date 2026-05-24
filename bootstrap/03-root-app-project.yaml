@@ -1,8 +1,11 @@
 # ============================================================================
-# Bootstrap step 3 : AppProject "iun-platform"
+# Bootstrap step 3 : AppProject "iun-platform" — Stack DPG
 # ============================================================================
 # Périmètre de toutes les Applications Argo CD du programme IUN.
 # Hébergé dans l'instance Argo CD dédiée `iun-argocd` (namespace `iun-gitops`).
+#
+# Mise à jour 2026-05-24 — pivot DPG : sourceRepos étendu pour autoriser les
+# Applications à pointer sur les repos Helm/Git officiels des 3 DPG.
 # ============================================================================
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -13,11 +16,35 @@ metadata:
   labels:
     app.kubernetes.io/part-of: iun-platform
 spec:
-  description: Plateforme IUN Sénégal — socle et applicatifs
+  description: Plateforme IUN Sénégal — socle + 3 DPG (OpenCRVS/MOSIP/OpenIMIS)
   sourceRepos:
+    # -- Repo GitOps interne (ce repo)
     - https://github.com/enguser-1/iun-gitops
     - https://github.com/enguser-1/iun-gitops.git
     - https://github.com/enguser-1/iun-gitops/*
+
+    # -- Repo applicatif iun-api (legacy hello-Quarkus, gardé pour compat
+    # transitoire — Application déplacée dans archive/, peut être retirée
+    # quand confirmation que rien n'y pointe plus).
+    - https://github.com/enguser-1/iun-api
+    - https://github.com/enguser-1/iun-api.git
+    - https://github.com/enguser-1/iun-api/*
+
+    # -- MOSIP — Helm chart officiel (TOR §3.2 C2, §4.1, §4.3)
+    - https://mosip.github.io/mosip-helm
+    - https://mosip.github.io/mosip-helm/*
+
+    # -- OpenCRVS — repo infrastructure (Helm charts) officiel (TOR §3.2 C1, §4.2)
+    - https://github.com/opencrvs/infrastructure
+    - https://github.com/opencrvs/infrastructure.git
+    - https://github.com/opencrvs/infrastructure/*
+
+    # -- OpenIMIS — repo distribution (docker-compose à kompose-convertir)
+    # (TOR §3.2 C3, §4.4)
+    - https://github.com/openimis/openimis-dist_dkr
+    - https://github.com/openimis/openimis-dist_dkr.git
+    - https://github.com/openimis/openimis-dist_dkr/*
+
   destinations:
     - namespace: "*"
       server: https://kubernetes.default.svc

@@ -1,0 +1,15 @@
+# ============================================================================
+# values prod — MOSIP (placeholder)
+# ============================================================================
+# Topologie actif-actif-actif 3 sites (TOR §5.2) :
+#   DC1 SENUM Diamniadio + DC2 SENELEC Diamniadio (stretched cluster)
+#   DC3 Mbour DOUANES (DR via RHACM)
+#
+# RTO < 4h, RPO < 1h (TOR §5.2). SLA 99,9% à M24 (TOR §8.3).
+# À détailler en phase P3 (M10–M18) après pilote validé.
+# ============================================================================
+global:
+  profile: production
+  namespace: mosip-prod
+
+# TODO: extraction depuis values/staging.yaml + ajustements DR + HSM Luna L3

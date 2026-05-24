@@ -1,0 +1,12 @@
+# ============================================================================
+# values staging — OpenCRVS (placeholder)
+# ============================================================================
+# Iso-prod côté topologie, dimensionné pour les 46 départements sénégalais
+# (TOR §4.2). Pilote Dakar+Thiès 50k enrôlés (TOR §5.5 P2, M5–M9).
+# ============================================================================
+global:
+  environment: staging
+  country: SN
+
+# TODO: extraction depuis dev.yaml + replicas augmentés (mongo replicaset 3,
+# elasticsearch cluster 3 nodes, MinIO distribué)

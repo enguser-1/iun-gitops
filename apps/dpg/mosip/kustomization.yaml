@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# ============================================================================
+# apps/dpg/mosip — Applications Argo CD MOSIP
+# ============================================================================
+# Agrège l'Application Argo CD principale (bootstrap-probe) et les manifests
+# supplémentaires (namespace, ConfigMap IUN format Verhoeff) qui sont déployés
+# DANS le namespace mosip-dev. La séparation est intentionnelle :
+#
+#   - application.yaml          → Application Argo CD (vit dans iun-gitops)
+#   - manifests/namespace.yaml  → namespace mosip-dev avec labels conformes
+#   - manifests/configmap-*.yaml → CR métier déployées DANS mosip-dev
+#
+# Argo CD lit ce kustomization quand iun-root-<env> pointe sur apps/dpg/mosip.
+# ============================================================================
+namespace: iun-gitops
+
+resources:
+  - application.yaml
+  # Le namespace cible mosip-dev et les ConfigMap métier sont gérés via
+  # syncOptions=CreateNamespace=true côté Application + Application séparée
+  # à venir pour les ConfigMap qui doivent atterrir DANS mosip-dev (pas dans
+  # iun-gitops). On NE les liste pas ici pour ne pas mélanger les namespaces.

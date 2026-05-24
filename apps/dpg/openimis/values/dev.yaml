@@ -1,0 +1,100 @@
+# ============================================================================
+# values dev — OpenIMIS (SQUELETTE — chart à créer)
+# ============================================================================
+# OpenIMIS n'a PAS de Helm chart officiel. Ce fichier sert de référentiel de
+# configuration logique pour la phase de conversion docker-compose → K8s.
+#
+# Cf. README.md (Source officielle) pour le détail de l'arbitrage (A)/(B)/(C).
+# ============================================================================
+
+global:
+  environment: development
+  country: SN
+
+# -- Modules OpenIMIS activés (TOR §4.4)
+modules:
+  # Affiliations multi-régimes
+  insuree: true       # personnes assurées (clé IUN)
+  family: true        # composition familiale
+  contribution: true  # cotisations / collecteur
+  claim: true         # prestations / liquidation
+  policy: true        # contrats d'assurance
+  payment: true       # paiements (Wave / Orange Money)
+  product: true       # produits d'assurance (CMU, IPRES, CSS, PNBSF)
+
+# -- Régimes sociaux sénégalais à modéliser (TOR §3.2 C3, §4.4)
+products:
+  - code: CMU
+    name: "Couverture Maladie Universelle"
+    type: maladie
+    target: "tous citoyens"
+  - code: PNBSF
+    name: "Programme National Bourses Sécurité Familiale"
+    type: bourse
+    target: "ménages vulnérables"
+  - code: IPRES
+    name: "Institut de Prévoyance Retraite Sénégal"
+    type: retraite
+    target: "salariés secteur privé"
+  - code: CSS
+    name: "Caisse de Sécurité Sociale"
+    type: famille
+    target: "salariés et leurs ayants droit"
+
+# -- Persistence
+persistence:
+  postgres:
+    storageClass: ocs-storagecluster-ceph-rbd
+    size: 20Gi
+  opensearch:
+    storageClass: ocs-storagecluster-ceph-rbd
+    size: 30Gi
+
+# -- Intégrations externes (TOR §4.4)
+integrations:
+  mosip:
+    enabled: false       # active après MOSIP kernel up — IUN comme clé primaire
+    endpoint: "http://mosip-id-repository.mosip-dev.svc.cluster.local:8080"
+  opencrvs:
+    enabled: false       # active après OpenCRVS up — affiliation auto à la naissance
+    endpoint: "http://opencrvs-gateway.opencrvs-dev.svc.cluster.local:7070"
+
+  # Sync hebdomadaire IPRES, vérification temps réel CSS, mise à jour quotidienne CMU/MSAS
+  externalSystems:
+    ipres:
+      enabled: false
+      syncFrequency: weekly
+    css:
+      enabled: false
+      mode: realtime
+    cmu:
+      enabled: false
+      syncFrequency: daily
+
+# -- Paiements mobiles (TOR §4.4)
+mobilePayments:
+  orangeMoney:
+    enabled: false  # activer en phase pilote
+  wave:
+    enabled: false
+
+# -- Trésor Public (TOR §4.4 — ordres de virement PNBSF)
+treasury:
+  enabled: false
+  endpoint: ""
+
+# -- Auth
+auth:
+  external: false  # OpenIMIS embarque son IAM par défaut. À harmoniser RHBK.
+
+# -- Ressources sandbox
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+ingress:
+  enabled: false
