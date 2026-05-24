@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # Backend API — Django REST + GraphQL (compose service `backend`, command: start)
 # ============================================================================
 apiVersion: v1
@@ -50,7 +50,7 @@ spec:
         - name: backend
           image: ghcr.io/openimis/openimis-be:25.10
           imagePullPolicy: IfNotPresent
-          command: ["start"]
+          args: ["start"]
           ports:
             - name: http
               containerPort: 8000
