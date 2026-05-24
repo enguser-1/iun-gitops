@@ -3,7 +3,20 @@ kind: Kustomization
 # ============================================================================
 # apps/dpg/opencrvs — Applications Argo CD OpenCRVS
 # ============================================================================
+# Ce kustomization déploie :
+#   1) Le namespace + bindings SCC + OBC (préalables à la mise en place du chart)
+#   2) Les deux Applications Argo CD (deps + services) qui prennent la suite
+#
+# Note : les manifests namespace / SCC / OBC sont volontairement appliqués via
+# Argo CD lui-même (App-of-Apps pattern à venir, ou via syncOptions sync-wave),
+# car on veut tracer leur création par la même Application Argo CD que les
+# Helm releases. À structurer en iter 2.
+# ============================================================================
 namespace: iun-gitops
 
 resources:
   - application.yaml
+  # Les manifests OCP (namespace, SCC, OBC) sont appliqués hors-kustomization
+  # pour le MVP — bootstrappés par .\Bootstrap-OpenCRVS.ps1 (à créer) ou par
+  # un sync manuel `oc apply -f manifests/`. À migrer en App-of-Apps Argo CD
+  # en iter 2 pour ne plus avoir de drift entre Git et cluster.

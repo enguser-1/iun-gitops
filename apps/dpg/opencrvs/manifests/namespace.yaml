@@ -1,6 +1,13 @@
 # ============================================================================
 # Namespace opencrvs-dev — environnement de développement OpenCRVS
 # ============================================================================
+# Créé en amont des deux Applications Argo CD (opencrvs-deps et
+# opencrvs-services) parce que ces dernières utilisent `CreateNamespace=false`
+# pour porter explicitement les labels Service Mesh, OpenShift Logging, PSA
+# et IUN platform.
+#
+# Cohérence avec mosip-dev/namespace.yaml — mêmes conventions de labels.
+# ============================================================================
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -9,8 +16,28 @@ metadata:
     app.kubernetes.io/part-of: iun-platform
     iun.sn/dpg: opencrvs
     iun.sn/env: dev
-    istio-injection: disabled  # voir note dans mosip-dev/namespace.yaml
+
+    # Service Mesh injection : disabled tant que opencrvs-dev n'est pas dans
+    # le ServiceMeshMemberRoll. À basculer `enabled` en iter 2 (mTLS gateway↔services).
+    istio-injection: disabled
+
+    # OpenShift Logging (Loki / Vector) — collecte des logs JSON
     openshift.io/cluster-logging: "true"
+
+    # Pod Security Admission (anticipation K8s upstream, non strict sur OCP 4.16)
+    # `baseline` retenu car Elasticsearch / MongoDB / MinIO ont besoin de
+    # capabilities limitées (sysctl vm.max_map_count pour ES) mais pas de
+    # `privileged`. Vérifier au 1er sync, ajuster à `privileged` UNIQUEMENT si
+    # un pod refuse explicitement (à documenter).
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+
   annotations:
-    openshift.io/description: "OpenCRVS DPG — environnement dev (TOR §3.2 C1)"
+    openshift.io/description: "OpenCRVS DPG — environnement dev (TOR §3.2 C1, §4.2)"
     openshift.io/display-name: "OpenCRVS — dev"
+
+    # Quotas indicatifs (à activer via ResourceQuota dédié en iter 2)
+    iun.sn/expected-cpu: "8"
+    iun.sn/expected-memory: "16Gi"
+    iun.sn/expected-storage: "100Gi"

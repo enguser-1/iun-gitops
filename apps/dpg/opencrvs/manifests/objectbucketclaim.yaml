@@ -1,0 +1,70 @@
+# ============================================================================
+# ObjectBucketClaim ODF — remplacement de MinIO embarqué (iter 2)
+# ============================================================================
+# Objectif : retirer MinIO du chart `dependencies` et brancher OpenCRVS
+# (service `documents` + service `client` PWA upload) sur le RGW Ceph fourni
+# par ODF (déjà installé sur le cluster — cf. mémoire [[project-iun-approach-b]]).
+#
+# Status MVP : ce manifest est créé MAIS le `minio.enabled` du chart reste à
+# `true` (cf. values/dev.yaml). Le basculement se fera en iter 2 quand on aura
+# validé que le service `documents` accepte un endpoint S3 externe via les
+# variables d'env standard `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`,
+# `S3_SECRET_KEY` (clés à confirmer par lecture du code source du service).
+#
+# StorageClass cible : `ocs-storagecluster-ceph-rgw` (RGW S3-compatible).
+# Le secret + configmap injectés par l'OBC se nomment `opencrvs-documents` —
+# alignés avec ce que le service OpenCRVS `documents` lit par défaut.
+#
+# Source ODF :
+#   https://access.redhat.com/documentation/en-us/red_hat_openshift_data_foundation/
+# ============================================================================
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: opencrvs-documents
+  namespace: opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: opencrvs
+    iun.sn/component: documents-storage
+  annotations:
+    iun.sn/replaces: "embedded-minio"
+    iun.sn/activated-in: "iter-2"
+spec:
+  # Quand ODF est déployé via le RGW, ce storageClass est créé automatiquement.
+  # À vérifier via : oc get sc | grep rgw
+  # En cas d'absence, le cluster-admin doit créer un CephObjectStore ; voir doc
+  # ODF "Bucket provisioning".
+  storageClassName: ocs-storagecluster-ceph-rgw
+  generateBucketName: opencrvs-docs-dev
+  # additionalConfig vide en MVP — tagger en iter 2 (versioning, lifecycle)
+  additionalConfig: {}
+---
+# ============================================================================
+# Note opérateur : l'OBC, une fois liée, crée :
+#   - Secret  opencrvs-documents (clés : AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+#   - ConfigMap opencrvs-documents (clés : BUCKET_NAME, BUCKET_HOST, BUCKET_PORT)
+#
+# Côté chart opencrvs-services, dans values/dev.yaml (iter 2) :
+#
+#   minio:
+#     enabled: false
+#   documents:
+#     storage: s3-external
+#     s3:
+#       endpointFromConfigMap:
+#         name: opencrvs-documents
+#         key: BUCKET_HOST
+#       bucketFromConfigMap:
+#         name: opencrvs-documents
+#         key: BUCKET_NAME
+#       accessKeyFromSecret:
+#         name: opencrvs-documents
+#         key: AWS_ACCESS_KEY_ID
+#       secretKeyFromSecret:
+#         name: opencrvs-documents
+#         key: AWS_SECRET_ACCESS_KEY
+#
+# La structure exacte des clés `documents.s3.*` reste à valider sur le chart
+# upstream — possible qu'on doive contribuer un PR pour exposer ces overrides.
+# ============================================================================

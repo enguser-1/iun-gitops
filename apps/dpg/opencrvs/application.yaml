@@ -1,57 +1,124 @@
 # ============================================================================
-# Argo CD Application : OpenCRVS (Open Civil Registration & Vital Statistics)
+# Argo CD Applications : OpenCRVS (Open Civil Registration & Vital Statistics)
 # ============================================================================
 # Rôle TOR §3.2 C1, §4.2 — enregistrement des faits d'état civil (naissances,
 # décès, mariages), PWA hors-ligne wolof/pulaar, recherche phonétique
-# Elasticsearch, 46 départements sénégalais, déclaration tardive code de la
-# famille art. 54.
+# Elasticsearch, 14 régions / 46 départements sénégalais, déclaration tardive
+# code de la famille art. 54.
 #
-# Source officielle : `opencrvs/infrastructure` (Helm charts) + `opencrvs/opencrvs-core`
-# (microservices). Série de production courante : v1.9.x (latest v1.9.12).
+# Sources officielles (vérifiées 2026-05-24) :
+#   - Microservices    : github.com/opencrvs/opencrvs-core      (images, latest = v1.9.13)
+#   - Helm charts      : github.com/opencrvs/opencrvs-helm-charts (ARCHIVÉ 2026-05-20, develop HEAD frozen)
+#   - Pays / config    : github.com/opencrvs/opencrvs-countryconfig (template Farajaland — à forker)
+#   - Documentation    : https://documentation.opencrvs.org/
 #
-# Stratégie d'inception : déploiement direct du chart `opencrvs` depuis la
-# branche release alignée avec la version core retenue. Recommandation
-# upstream : garder infrastructure et core sur la MÊME version.
+# Architecture : 2 Applications Argo CD avec sync-waves pour respecter l'ordre
+# de bootstrap (dependencies AVANT services). Pattern recommandé par OpenCRVS
+# (cf. opencrvs-helm-charts/README.md — quickstart Tilt déploie dans cet ordre).
+#
+# Limite connue : le chart `dependencies` embarque par défaut Traefik
+# IngressRoute. Sur OpenShift on désactive Traefik (values/dev.yaml) et on
+# expose via OCP Route (manifests/route-opencrvs-client.yaml en iter 2).
 # ============================================================================
+
+# ----------------------------------------------------------------------------
+# 1) Dependencies — MongoDB, Elasticsearch, Redis, MinIO (ou OBC), InfluxDB
+# ----------------------------------------------------------------------------
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: opencrvs-core
+  name: opencrvs-deps
   namespace: iun-gitops
   labels:
     app.kubernetes.io/name: opencrvs
+    app.kubernetes.io/component: dependencies
     app.kubernetes.io/part-of: iun-platform
-    app.kubernetes.io/component: dpg-civil-registration
     iun.sn/dpg: opencrvs
   annotations:
     iun.sn/tor-ref: "§3.2 C1, §4.2"
-    iun.sn/status: "bootstrap — chart upstream à figer après évaluation"
+    iun.sn/status: "MVP dev — chart upstream pinné sur develop (repo archivé)"
+    argocd.argoproj.io/sync-wave: "10"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: iun-platform
   source:
-    # ⚠ opencrvs/infrastructure ne publie PAS sur un Helm repo CNCF/Bitnami :
-    # le chart est dans le repo Git. On utilise donc le path Helm sur tag Git.
-    repoURL: https://github.com/opencrvs/infrastructure
-    targetRevision: v1.9.12  # À FIGER après évaluation — voir README §Source officielle
-    path: infrastructure/helm-charts/dependencies  # ⚠ chemin à VÉRIFIER au clone
+    repoURL: https://github.com/opencrvs/opencrvs-helm-charts
+    # Le repo est archivé (read-only depuis 2026-05-20), develop HEAD est figé.
+    # Le Lead doit substituer ce ref par un commit SHA explicite après le 1er
+    # `git ls-remote --heads` réussi côté cluster, pour garantir l'immuabilité.
+    targetRevision: develop
+    path: charts/dependencies
+    helm:
+      releaseName: opencrvs-deps
+      valueFiles:
+        - ../../../../../iun-gitops/apps/dpg/opencrvs/values/dev.yaml
+      # ⚠ Argo CD ne supporte le `valueFiles` cross-repo qu'en mode `multiple
+      # sources` (Argo CD >= 2.7). Plan B si non disponible : inliner les
+      # values ci-dessous dans `helm.values: |`.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: opencrvs-dev
+  syncPolicy:
+    automated:
+      prune: false      # MVP : pas de prune auto sur les statefuls
+      selfHeal: false   # idem
+    syncOptions:
+      - CreateNamespace=false   # namespace pré-créé par manifests/namespace.yaml
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+  ignoreDifferences:
+    # Les PVC peuvent voir leur storageClassName mutée par le provisioner ODF
+    - group: ""
+      kind: PersistentVolumeClaim
+      jsonPointers:
+        - /spec/volumeName
+  revisionHistoryLimit: 5
+
+---
+# ----------------------------------------------------------------------------
+# 2) Services — microservices OpenCRVS (gateway, auth, hearth, search, workflow…)
+# ----------------------------------------------------------------------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opencrvs-services
+  namespace: iun-gitops
+  labels:
+    app.kubernetes.io/name: opencrvs
+    app.kubernetes.io/component: services
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: opencrvs
+  annotations:
+    iun.sn/tor-ref: "§3.2 C1, §4.2, §3.4.1"
+    iun.sn/status: "MVP dev — dépendances doivent être Healthy"
+    # Sync APRÈS les dependencies (wave 10) — wait sur Healthy implicite via
+    # readiness probes des charts deps + retry backoff.
+    argocd.argoproj.io/sync-wave: "20"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: iun-platform
+  source:
+    repoURL: https://github.com/opencrvs/opencrvs-helm-charts
+    targetRevision: develop  # Mêmes notes d'épinglage que pour deps.
+    path: charts/opencrvs-services
     helm:
       releaseName: opencrvs
-      # Les values pleines vivent dans values/dev.yaml (ce dossier).
-      # Argo CD ne supporte pas valueFiles externes au repo chart par défaut ;
-      # on inline donc les overrides critiques ici, et on déléguera le reste
-      # à un Application chaining quand la stack sera stabilisée.
-      values: |
-        # Override Sénégal — voir values/dev.yaml pour le détail
-        global:
-          environment: development
-          country: SN
-          locale:
-            primary: fr
-            secondary:
-              - wo  # wolof (TOR §4.2)
-              - ff  # pulaar (TOR §4.2)
+      valueFiles:
+        - ../../../../../iun-gitops/apps/dpg/opencrvs/values/dev.yaml
+      # Override prioritaire pour fixer la version d'images core sur v1.9.13
+      # (release stable la plus récente, série courante — release du 2026-05-08).
+      parameters:
+        - name: global.image.tag
+          value: v1.9.13
   destination:
     server: https://kubernetes.default.svc
     namespace: opencrvs-dev
@@ -60,13 +127,14 @@ spec:
       prune: false
       selfHeal: false
     syncOptions:
-      - CreateNamespace=true
+      - CreateNamespace=false
       - ServerSideApply=true
       - RespectIgnoreDifferences=true
+      - ApplyOutOfSyncOnly=true
     retry:
-      limit: 3
+      limit: 5
       backoff:
         duration: 30s
         factor: 2
-        maxDuration: 5m
+        maxDuration: 10m
   revisionHistoryLimit: 5

@@ -1,0 +1,71 @@
+# ============================================================================
+# SCC binding — OpenCRVS dans le namespace opencrvs-dev
+# ============================================================================
+# Les images upstream OpenCRVS (mongo, elasticsearch, minio, redis, hearth,
+# microservices Node.js) sont publiées par OpenCRVS / éditeurs amont sans
+# garantie de respect strict de `restricted-v2` (l'UID utilisateur n'est pas
+# toujours unique, certains images runent en `nonroot` mais pas tous).
+#
+# Stratégie MVP (sandbox dev) :
+#   - Bind `nonroot-v2` aux ServiceAccount qui en ont besoin (deps + services)
+#   - PAS de `anyuid` par défaut — à n'accorder que si un pod refuse de démarrer
+#     et après diagnostic explicite (logs `runAsUser` denied)
+#   - PAS de `privileged` — incompatible TOR §6.3
+#
+# Iter 2 (staging/prod) : passer à `restricted-v2` strict via
+# securityContext.runAsNonRoot=true + runAsUser=10001 dans les overrides values.
+#
+# Sources :
+#   - OCP SCC docs : https://docs.openshift.com/container-platform/4.16/authentication/managing-security-context-constraints.html
+#   - OpenCRVS images : github.com/orgs/opencrvs/packages
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# ServiceAccount dédié aux pods OpenCRVS deps + services
+# Plus simple à auditer qu'utiliser le SA `default`.
+# ----------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opencrvs-runtime
+  namespace: opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: opencrvs
+
+---
+# ----------------------------------------------------------------------------
+# RoleBinding pour autoriser opencrvs-runtime à utiliser nonroot-v2
+# ----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: opencrvs-use-scc-nonroot
+  namespace: opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: opencrvs
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  # ClusterRole `system:openshift:scc:nonroot-v2` existe par défaut sur OCP 4.x
+  name: system:openshift:scc:nonroot-v2
+subjects:
+  - kind: ServiceAccount
+    name: opencrvs-runtime
+    namespace: opencrvs-dev
+  # Inclure le SA par défaut tant que les Helm templates upstream ne précisent
+  # pas systématiquement `serviceAccountName: opencrvs-runtime`. À retirer en
+  # iter 2 quand les values fixent partout le SA.
+  - kind: ServiceAccount
+    name: default
+    namespace: opencrvs-dev
+
+---
+# ----------------------------------------------------------------------------
+# Note : si Elasticsearch refuse de démarrer (erreur `max_map_count`), il faut
+# soit un DaemonSet init-container privileged qui fait `sysctl -w` au boot du
+# node (incompatible TOR §6.3), soit demander au cluster-admin d'augmenter
+# `vm.max_map_count=262144` via MachineConfig (TuningOperator). À documenter
+# comme prérequis cluster avant le 1er sync — voir README §Prérequis cluster.
+# ----------------------------------------------------------------------------

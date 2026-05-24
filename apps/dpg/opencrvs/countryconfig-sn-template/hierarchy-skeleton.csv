@@ -1,0 +1,121 @@
+statisticalID,name,partOf,locationType,jurisdictionType,iso3166_2,ansd_code,name_fr,name_wo,name_ff
+# ============================================================================
+# Squelette hiérarchie administrative Sénégal pour opencrvs-countryconfig-sn
+# Format OpenCRVS data-seeding (locations.csv) — voir doc admin divisions
+# https://documentation.opencrvs.org/setup/3.-installation/3.2-set-up-your-own-country-configuration/3.2.2-set-up-administrative-address-divisions
+#
+# Colonnes :
+#   statisticalID   — ID stable, format ISO 3166-2 ou dérivé ANSD
+#   name            — nom canonique (FR par défaut)
+#   partOf          — ID parent (Location/SN pour les régions, code région pour les dépts)
+#   locationType    — ADMIN_STRUCTURE | HEALTH_FACILITY | CRVS_OFFICE
+#   jurisdictionType— STATE | DISTRICT | LOCATION_LEVEL_3..5 (mapping OpenCRVS)
+#   iso3166_2       — code ISO 3166-2 (régions seulement)
+#   ansd_code       — code ANSD du Recensement 2023 (à compléter — placeholder)
+#   name_fr/wo/ff   — traductions (à compléter — TBD avec partenaire linguistique)
+#
+# Statut : 14 régions complètes (ISO confirmé) + 46 départements (placeholders ANSD).
+# À compléter au sprint S1 : ~123 arrondissements + 557 communes.
+# ============================================================================
+
+# --- Régions (admin level 1, jurisdictionType=STATE) ---
+SN_DK,Dakar,Location/SN,ADMIN_STRUCTURE,STATE,SN-DK,01,Dakar,Dakar,Dakar
+SN_DB,Diourbel,Location/SN,ADMIN_STRUCTURE,STATE,SN-DB,02,Diourbel,Joorbel,Diourbel
+SN_FK,Fatick,Location/SN,ADMIN_STRUCTURE,STATE,SN-FK,03,Fatick,Fatik,Fatik
+SN_KA,Kaffrine,Location/SN,ADMIN_STRUCTURE,STATE,SN-KA,04,Kaffrine,Kafrin,Kaffrine
+SN_KL,Kaolack,Location/SN,ADMIN_STRUCTURE,STATE,SN-KL,05,Kaolack,Kawlax,Kaolak
+SN_KE,Kédougou,Location/SN,ADMIN_STRUCTURE,STATE,SN-KE,06,Kédougou,Kéedugu,Kédougou
+SN_KD,Kolda,Location/SN,ADMIN_STRUCTURE,STATE,SN-KD,07,Kolda,Koldaa,Kolda
+SN_LG,Louga,Location/SN,ADMIN_STRUCTURE,STATE,SN-LG,08,Louga,Luga,Louga
+SN_MT,Matam,Location/SN,ADMIN_STRUCTURE,STATE,SN-MT,09,Matam,Matam,Matam
+SN_SL,Saint-Louis,Location/SN,ADMIN_STRUCTURE,STATE,SN-SL,10,Saint-Louis,Senluwi,Ndar
+SN_SE,Sédhiou,Location/SN,ADMIN_STRUCTURE,STATE,SN-SE,11,Sédhiou,Seediyu,Sédhiou
+SN_TC,Tambacounda,Location/SN,ADMIN_STRUCTURE,STATE,SN-TC,12,Tambacounda,Tammbakundaa,Tambakunda
+SN_TH,Thiès,Location/SN,ADMIN_STRUCTURE,STATE,SN-TH,13,Thiès,Cees,Thiès
+SN_ZG,Ziguinchor,Location/SN,ADMIN_STRUCTURE,STATE,SN-ZG,14,Ziguinchor,Siggicoor,Ziguinchor
+
+# --- Départements (admin level 2, jurisdictionType=DISTRICT) — 46 total ---
+# Région Dakar (5)
+SN_DK_DK,Dakar,Location/SN_DK,ADMIN_STRUCTURE,DISTRICT,,0101,Dakar,Dakar,Dakar
+SN_DK_PI,Pikine,Location/SN_DK,ADMIN_STRUCTURE,DISTRICT,,0102,Pikine,Pikiin,Pikine
+SN_DK_GU,Guédiawaye,Location/SN_DK,ADMIN_STRUCTURE,DISTRICT,,0103,Guédiawaye,Gej-Awaay,Guédiawaye
+SN_DK_RU,Rufisque,Location/SN_DK,ADMIN_STRUCTURE,DISTRICT,,0104,Rufisque,Tëngéej,Rufisque
+SN_DK_KM,Keur Massar,Location/SN_DK,ADMIN_STRUCTURE,DISTRICT,,0105,Keur Massar,Kër Maasar,Keur Massar
+
+# Région Diourbel (3)
+SN_DB_DB,Diourbel,Location/SN_DB,ADMIN_STRUCTURE,DISTRICT,,0201,Diourbel,Joorbel,Diourbel
+SN_DB_BA,Bambey,Location/SN_DB,ADMIN_STRUCTURE,DISTRICT,,0202,Bambey,Bammbey,Bambey
+SN_DB_MB,Mbacké,Location/SN_DB,ADMIN_STRUCTURE,DISTRICT,,0203,Mbacké,Mbakke,Mbacké
+
+# Région Fatick (3)
+SN_FK_FK,Fatick,Location/SN_FK,ADMIN_STRUCTURE,DISTRICT,,0301,Fatick,Fatik,Fatik
+SN_FK_FD,Foundiougne,Location/SN_FK,ADMIN_STRUCTURE,DISTRICT,,0302,Foundiougne,Funjuñ,Foundiougne
+SN_FK_GS,Gossas,Location/SN_FK,ADMIN_STRUCTURE,DISTRICT,,0303,Gossas,Gosas,Gossas
+
+# Région Kaffrine (4)
+SN_KA_KA,Kaffrine,Location/SN_KA,ADMIN_STRUCTURE,DISTRICT,,0401,Kaffrine,Kafrin,Kaffrine
+SN_KA_BI,Birkilane,Location/SN_KA,ADMIN_STRUCTURE,DISTRICT,,0402,Birkilane,Birkilan,Birkilane
+SN_KA_KO,Koungheul,Location/SN_KA,ADMIN_STRUCTURE,DISTRICT,,0403,Koungheul,Kunngel,Koungheul
+SN_KA_MH,Malem Hodar,Location/SN_KA,ADMIN_STRUCTURE,DISTRICT,,0404,Malem Hodar,Malem Hodar,Malem Hodar
+
+# Région Kaolack (3)
+SN_KL_KL,Kaolack,Location/SN_KL,ADMIN_STRUCTURE,DISTRICT,,0501,Kaolack,Kawlax,Kaolak
+SN_KL_NR,Nioro du Rip,Location/SN_KL,ADMIN_STRUCTURE,DISTRICT,,0502,Nioro du Rip,Ñoro,Nioro
+SN_KL_GG,Guinguinéo,Location/SN_KL,ADMIN_STRUCTURE,DISTRICT,,0503,Guinguinéo,Gingineo,Guinguinéo
+
+# Région Kédougou (3)
+SN_KE_KE,Kédougou,Location/SN_KE,ADMIN_STRUCTURE,DISTRICT,,0601,Kédougou,Kéedugu,Kédougou
+SN_KE_SA,Salémata,Location/SN_KE,ADMIN_STRUCTURE,DISTRICT,,0602,Salémata,Salemata,Salémata
+SN_KE_SR,Saraya,Location/SN_KE,ADMIN_STRUCTURE,DISTRICT,,0603,Saraya,Saraya,Saraya
+
+# Région Kolda (3)
+SN_KD_KD,Kolda,Location/SN_KD,ADMIN_STRUCTURE,DISTRICT,,0701,Kolda,Koldaa,Kolda
+SN_KD_MY,Médina Yoro Foulah,Location/SN_KD,ADMIN_STRUCTURE,DISTRICT,,0702,Médina Yoro Foulah,Medina Yoro Fula,Médina Yoro Foulah
+SN_KD_VE,Vélingara,Location/SN_KD,ADMIN_STRUCTURE,DISTRICT,,0703,Vélingara,Velingara,Vélingara
+
+# Région Louga (3)
+SN_LG_LG,Louga,Location/SN_LG,ADMIN_STRUCTURE,DISTRICT,,0801,Louga,Luga,Louga
+SN_LG_KB,Kébémer,Location/SN_LG,ADMIN_STRUCTURE,DISTRICT,,0802,Kébémer,Këbemer,Kébémer
+SN_LG_LI,Linguère,Location/SN_LG,ADMIN_STRUCTURE,DISTRICT,,0803,Linguère,Linnger,Linguère
+
+# Région Matam (3)
+SN_MT_MT,Matam,Location/SN_MT,ADMIN_STRUCTURE,DISTRICT,,0901,Matam,Matam,Matam
+SN_MT_KN,Kanel,Location/SN_MT,ADMIN_STRUCTURE,DISTRICT,,0902,Kanel,Kanel,Kanel
+SN_MT_RF,Ranérou-Ferlo,Location/SN_MT,ADMIN_STRUCTURE,DISTRICT,,0903,Ranérou-Ferlo,Ranero-Ferlo,Ranérou-Ferlo
+
+# Région Saint-Louis (3)
+SN_SL_SL,Saint-Louis,Location/SN_SL,ADMIN_STRUCTURE,DISTRICT,,1001,Saint-Louis,Ndar,Ndar
+SN_SL_DA,Dagana,Location/SN_SL,ADMIN_STRUCTURE,DISTRICT,,1002,Dagana,Dagana,Dagana
+SN_SL_PO,Podor,Location/SN_SL,ADMIN_STRUCTURE,DISTRICT,,1003,Podor,Podor,Podor
+
+# Région Sédhiou (3)
+SN_SE_SE,Sédhiou,Location/SN_SE,ADMIN_STRUCTURE,DISTRICT,,1101,Sédhiou,Seediyu,Sédhiou
+SN_SE_BK,Bounkiling,Location/SN_SE,ADMIN_STRUCTURE,DISTRICT,,1102,Bounkiling,Buunkilinng,Bounkiling
+SN_SE_GD,Goudomp,Location/SN_SE,ADMIN_STRUCTURE,DISTRICT,,1103,Goudomp,Gudomp,Goudomp
+
+# Région Tambacounda (4)
+SN_TC_TC,Tambacounda,Location/SN_TC,ADMIN_STRUCTURE,DISTRICT,,1201,Tambacounda,Tammbakundaa,Tambakunda
+SN_TC_BK,Bakel,Location/SN_TC,ADMIN_STRUCTURE,DISTRICT,,1202,Bakel,Bakel,Bakel
+SN_TC_GR,Goudiry,Location/SN_TC,ADMIN_STRUCTURE,DISTRICT,,1203,Goudiry,Gudiri,Goudiry
+SN_TC_KP,Koumpentoum,Location/SN_TC,ADMIN_STRUCTURE,DISTRICT,,1204,Koumpentoum,Kumpentum,Koumpentoum
+
+# Région Thiès (3)
+SN_TH_TH,Thiès,Location/SN_TH,ADMIN_STRUCTURE,DISTRICT,,1301,Thiès,Cees,Thiès
+SN_TH_MB,Mbour,Location/SN_TH,ADMIN_STRUCTURE,DISTRICT,,1302,Mbour,Mbur,Mbour
+SN_TH_TV,Tivaouane,Location/SN_TH,ADMIN_STRUCTURE,DISTRICT,,1303,Tivaouane,Tiwaawan,Tivaouane
+
+# Région Ziguinchor (3)
+SN_ZG_ZG,Ziguinchor,Location/SN_ZG,ADMIN_STRUCTURE,DISTRICT,,1401,Ziguinchor,Siggicoor,Ziguinchor
+SN_ZG_BG,Bignona,Location/SN_ZG,ADMIN_STRUCTURE,DISTRICT,,1402,Bignona,Bignona,Bignona
+SN_ZG_OY,Oussouye,Location/SN_ZG,ADMIN_STRUCTURE,DISTRICT,,1403,Oussouye,Usuy,Oussouye
+
+# ============================================================================
+# TODO Sprint S1+ :
+#   - Niveau 3 (~123 arrondissements) — source ANSD
+#   - Niveau 4 (~557 communes — 110 urbaines + 447 rurales loi 2013-10
+#     Acte III décentralisation) — source UAEL / Ministère de l'Intérieur
+#   - Niveau 5 (quartiers/villages) — extraction Recensement 2023 ANSD
+#   - Health facilities (maternités → trigger naissance) — source MSAS
+#   - CRVS offices (bureaux d'état civil) — source DGEAT
+#   - Traductions WO/FF validées par partenaire linguistique (UCAD)
+# ============================================================================

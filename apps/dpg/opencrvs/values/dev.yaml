@@ -1,86 +1,203 @@
 # ============================================================================
-# values dev — OpenCRVS (overrides Sénégal, environnement dev)
+# values dev — OpenCRVS (overrides Sénégal, environnement dev MVP)
 # ============================================================================
-# Référence chart : opencrvs/infrastructure @ v1.9.12 (à reconfirmer).
-# Ce fichier est un SQUELETTE — la liste exhaustive des clés dépend du chart.
-# Voir documentation : https://documentation.opencrvs.org/setup/3.-installation/
+# Référence charts : opencrvs/opencrvs-helm-charts @ develop (archivé 2026-05-20).
+# Images core      : opencrvs/opencrvs-core v1.9.13 (release 2026-05-08, latest).
+# Doc canonique    : https://documentation.opencrvs.org/setup/3.-installation/
+#
+# Périmètre MVP :
+#   - Démarrer la stack technique (Mongo + ES + Redis + Influx + MinIO ou OBC)
+#   - Démarrer les microservices (gateway, auth, user-mgnt, workflow, search,
+#     hearth, documents, config, client, gateway, notification, metrics, webhooks)
+#   - countryconfig pointé sur un placeholder (sera changé après création du
+#     fork enguser-1/opencrvs-countryconfig-sn — voir countryconfig-sn-template/)
+#   - Pas d'intégration MOSIP en MVP (mosip.enabled=false)
+#   - Pas de monitoring ELK embarqué (delegué à OpenShift Logging / Loki)
+#
+# Sizing : dev sur cluster partagé OCP 4.16.29, sandbox, ~40Gi RAM réservés.
 # ============================================================================
 
+# ----------------------------------------------------------------------------
+# Section globale — partagée par charts/dependencies et charts/opencrvs-services
+# ----------------------------------------------------------------------------
 global:
   environment: development
-  country: SN  # Sénégal
+  country: SN
 
-  # -- Langues officielles d'interface (TOR §4.2)
+  # -- Image pull
+  image:
+    # Override-able via Argo CD parameters (cf. application.yaml § services)
+    tag: v1.9.13
+    pullPolicy: IfNotPresent
+
+  # -- Langues officielles d'interface (TOR §4.2). ISO 639-1.
   locale:
-    primary: fr        # français
+    primary: fr
     secondary:
-      - wo             # wolof (TOR §4.2)
-      - ff             # pulaar (TOR §4.2)
+      - wo   # wolof
+      - ff   # pulaar (Fula)
 
-  # -- Découpage administratif (TOR §4.2 — 46 départements)
-  # La configuration des sites administratifs se fait via le module
-  # `opencrvs-countryconfig` (séparé du core). Voir backlog.
+  # -- countryconfig : fork Sénégal à créer (voir countryconfig-sn-template/)
   countryConfig:
     name: senegal
-    repoURL: https://github.com/<TBD>/opencrvs-countryconfig-sn  # à créer / forker
-    branch: main
+    # PLACEHOLDER — à remplacer par https://github.com/enguser-1/opencrvs-countryconfig-sn
+    # une fois le fork créé selon countryconfig-sn-template/README.md
+    repoURL: https://github.com/opencrvs/opencrvs-countryconfig
+    branch: v1.9.13
 
-# -- Mode hors-ligne (TOR §4.2 — PWA + IndexedDB + sync CRDT)
-pwa:
-  enabled: true
-  offlineMode: true
-  syncStrategy: crdt  # eventual consistency via Yjs/Automerge (à confirmer côté core)
+# ============================================================================
+# DEPENDENCIES (chart `dependencies`)
+# Clés alignées sur charts/dependencies/values.yaml du repo upstream.
+# ============================================================================
 
-# -- Recherche phonétique wolof/français (TOR §4.2 + §4.11)
-search:
-  engine: elasticsearch
-  phoneticAlgorithm: doubleMetaphone  # vérifier compat wolof — peut nécessiter custom analyzer
-  languages:
-    - fr
-    - wo
+# -- Hostname principal exposé (route OCP en iter 2 — voir manifests/route-*.yaml)
+hostname: opencrvs-dev.apps.origins.heritage.africa
+subdomain_separator: "-"
 
-# -- Workflow déclaration tardive (TOR §4.2 + Code de la famille art. 54)
-declarations:
-  lateRegistration:
-    enabled: true
-    requiresWitness: true       # témoins requis (art. 54)
-    requiresCourtValidation: true  # tribunal d'instance
-    issueProvisionalNIA: true   # Numéro d'Identification d'Attente avant IUN définitif
+# -- Ingress : DÉSACTIVER Traefik (le chart upstream l'embarque ; OCP utilise Route)
+ingress:
+  ssl_enabled: false       # SSL géré par OCP Router (re-encrypt termination plus tard)
+  tls_resolver: ""
 
-# -- Persistence (MongoDB, Elasticsearch, MinIO embarqués par défaut)
-persistence:
-  mongodb:
-    storageClass: ocs-storagecluster-ceph-rbd
-    size: 20Gi
-  elasticsearch:
-    storageClass: ocs-storagecluster-ceph-rbd
-    size: 30Gi
-  minio:
-    storageClass: ocs-storagecluster-ceph-rbd
-    size: 50Gi
+# -- Storage : ODF Ceph (RWO bloc pour Mongo/ES/Influx ; OBC pour MinIO en iter 2)
+storage_type: pvc
 
-# -- Ressources (sandbox dev)
+# Pas de timezone explicite : laisser le kube-controller-manager par défaut (UTC)
+
+chart_dev_mode: false  # Sur OCP avec Argo CD, on veut le tracking strict des secrets
+
+# -- Ressources globales par défaut (dev sandbox)
 resources:
-  requests:
-    cpu: 200m
-    memory: 512Mi
-  limits:
-    cpu: 1000m
-    memory: 2Gi
+  memoryRequest: "200Mi"
+  cpuRequest: "100m"
+  memoryLimit: "4Gi"
+  cpuLimit: "2"
 
-# -- Auth : intégration future avec RHBK ou MOSIP Resident Services
-# Par défaut, OpenCRVS embarque son propre IAM. À harmoniser à terme.
-auth:
-  external: false
-  # À basculer en true quand RHBK realm IUN sera configuré (voir backlog integration).
+# -- MongoDB (persistence FHIR via Hearth + user-mgnt + config)
+mongodb:
+  enabled: true
+  version: "4.4"
+  use_default_credentials: true   # MVP dev — basculer false + secret en iter 2
+  # storageClass et taille gérés par le chart via `storage_type=pvc` ; les
+  # PVC créés héritent du storageClass par défaut du cluster (`ocs-storagecluster-ceph-rbd`)
+  # Tailles dev : Mongo ~10Gi suffit pour seed Farajaland + tests
+  resources:
+    memoryRequest: "512Mi"
+    cpuRequest: "200m"
+    memoryLimit: "2Gi"
+    cpuLimit: "1"
+
+# -- Postgres (FDW vers Mongo — utilisé par les jobs de stats/Metabase)
+postgres:
+  enabled: true
+  image: chumaky/postgres_mongo_fdw:17.6_fdw5.5.2
+  use_default_credentials: true
+
+# -- Elasticsearch (search index — phonetic FR/WO custom analyzer en iter 2)
+elasticsearch:
+  enabled: true
+  image: docker.elastic.co/elasticsearch/elasticsearch:8.19.15
+  use_default_credentials: true
+  auth_mode: auto
+  resources:
+    memoryRequest: "1Gi"     # dev — 1Gi heap, 2Gi container
+    cpuRequest: "500m"
+    memoryLimit: "2Gi"
+    cpuLimit: "2"
+  monitoring:
+    enabled: false           # logs/metrics délégués à OpenShift Logging + Prometheus
+
+# -- MinIO (stockage objet pour documents/PJ scannées)
+# MVP : MinIO embarqué (use_default_credentials). Iter 2 : remplacer par OBC ODF
+# (voir manifests/objectbucketclaim.yaml) puis pointer S3 vers
+# rook-ceph-rgw.openshift-storage.svc et désactiver minio.enabled.
+minio:
+  enabled: true
+  use_default_credentials: true
+  # node_selector laissé vide — sandbox dev
+  backup:
+    enabled: false
+  restore:
+    enabled: false
+
+# -- Redis (cache gateway + auth)
+redis:
+  enabled: true
+  auth_mode: disabled        # MVP dev — basculer `password` en iter 2 via secret externe
+  auth_users:
+    - GATEWAY
+    - AUTH
+
+# -- InfluxDB (métriques agrégées par metrics-service)
+influxdb:
+  enabled: true
+  backup:
+    enabled: false
+  restore:
+    enabled: false
+
+# -- Priority class désactivée (cluster partagé sans politique de préemption)
+priority_class:
+  name: opencrvs-datastore-high-priority
+  enabled: false
+
+# ============================================================================
+# OPENCRVS SERVICES (chart `opencrvs-services`)
+# Clés indicatives — la liste exhaustive dépend du chart upstream ; à valider
+# par `helm template` lors du 1er sync Argo CD (cf. README §Validation).
+# ============================================================================
+
+# -- Topologie microservices : 1 replica chacun en dev (les chart par défaut
+#    n'ont pas de HPA activé en MVP).
+services:
+  gateway:
+    enabled: true
+    replicas: 1
+  auth:
+    enabled: true
+    replicas: 1
+  userMgnt:
+    enabled: true
+    replicas: 1
+  workflow:
+    enabled: true
+    replicas: 1
+  search:
+    enabled: true
+    replicas: 1
+  hearth:
+    enabled: true             # FHIR R4 server (TOR §4.2)
+    replicas: 1
+  documents:
+    enabled: true
+    replicas: 1
+  notification:
+    enabled: true
+    replicas: 1
+  metrics:
+    enabled: true
+    replicas: 1
+  webhooks:
+    enabled: true             # Point d'intégration MOSIP — voir countryconfig-sn §6
+    replicas: 1
+  client:                     # PWA React
+    enabled: true
+    replicas: 1
+  config:
+    enabled: true
+    replicas: 1
 
 # -- Intégration MOSIP : envoi des données d'état civil pour génération IUN
 # (TOR §3.4.1 — Enrôlement nouveau-né : OpenCRVS → MOSIP → OpenIMIS automatique)
 integrations:
   mosip:
-    enabled: false  # activer en phase 2 quand kernel MOSIP sera up
-    endpoint: "http://mosip-id-repository.mosip-dev.svc.cluster.local:8080"
+    enabled: false           # activer en P2 quand kernel MOSIP sera Healthy
+    endpoint: "http://mosip-api-gw.mosip-dev.svc.cluster.local:8080"
+
+# -- Auth externe (RHBK) : désactivée en MVP, OpenCRVS auth interne suffit
+auth:
+  external: false
 
 # -- OpenShift Route (vs Ingress)
-ingress:
-  enabled: false  # on expose via Route OpenShift
+ingressOpenshift:
+  enabled: false              # iter 2 — voir manifests/route-opencrvs-client.yaml
