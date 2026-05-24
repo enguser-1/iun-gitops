@@ -293,3 +293,57 @@ spec:
       - ServerSideApply=true
     retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
   revisionHistoryLimit: 5
+---
+
+# mosip-postgres-init — chart mosip/postgres-init.
+#
+# Produit la ConfigMap `postgres-setup-config` consommée par config-server
+# (sans elle, le pod config-server reste en CreateContainerConfigError).
+# Initialise les schemas MOSIP dans le Cluster CNPG mosip-postgres déjà
+# déployé via manifests/cnpg-mosip-cluster.yaml.
+#
+# Wave 9 = inséré entre softhsm-kernel (7) et config-server (10).
+#
+# ⚠ targetRevision PLACEHOLDER — valider côté Lead avant push :
+#   helm repo update mosip
+#   helm search repo mosip/postgres-init --versions | head
+# ⚠ Schéma du chart non vérifié depuis la sandbox (réseau gh restreint).
+#   Voir dev-postgres-init.yaml pour les hypothèses retenues.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mosip-postgres-init
+  namespace: iun-gitops
+  labels:
+    app.kubernetes.io/name: mosip-postgres-init
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+  annotations:
+    argocd.argoproj.io/sync-wave: "9"
+    iun.sn/tor-ref: "§4.1 (init bases MOSIP)"
+    iun.sn/role: "Produit ConfigMap postgres-setup-config consommée par config-server, init schemas DB MOSIP dans CNPG mosip-postgres"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: iun-platform
+  sources:
+    - repoURL: https://mosip.github.io/mosip-helm
+      chart: postgres-init
+      targetRevision: 12.0.2  # PLACEHOLDER — valider avant push
+      helm:
+        releaseName: postgres-init
+        valueFiles:
+          - $values/apps/dpg/mosip/values/dev-postgres-init.yaml
+    - repoURL: https://github.com/enguser-1/iun-gitops.git
+      targetRevision: HEAD
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mosip-dev
+  syncPolicy:
+    automated: {prune: false, selfHeal: false}
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
+  revisionHistoryLimit: 5
