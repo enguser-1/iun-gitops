@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # Argo CD Applications — MOSIP MVP IUN (itération 1)
 # ============================================================================
 # Objectif TOR §4.1.2 / §4.1.3 : démontrer la génération d'un IUN de 9 chiffres
@@ -37,6 +37,7 @@
 # ============================================================================
 
 ---
+
 # ---------------------------------------------------------------------------
 # 1) mosip-bootstrap — manifests locaux (namespace, SCC, CNPG, ConfigMap, Kafka)
 # ---------------------------------------------------------------------------
@@ -82,6 +83,7 @@ spec:
   revisionHistoryLimit: 5
 
 ---
+
 # ---------------------------------------------------------------------------
 # 2) mosip-config-server — Spring Cloud Config Server
 # ---------------------------------------------------------------------------
@@ -110,7 +112,7 @@ spec:
   sources:
     - repoURL: https://mosip.github.io/mosip-helm
       chart: config-server
-      targetRevision: 12.0.1-B3  # PLACEHOLDER — voir README §Risques
+      targetRevision: 12.0.4  # PLACEHOLDER — voir README §Risques
       helm:
         releaseName: config-server
         valueFiles:
@@ -137,6 +139,7 @@ spec:
   revisionHistoryLimit: 5
 
 ---
+
 # ---------------------------------------------------------------------------
 # 3) mosip-keymanager — kernel-keymanager-service (signature crypto kernel)
 # ---------------------------------------------------------------------------
@@ -161,7 +164,7 @@ spec:
   sources:
     - repoURL: https://mosip.github.io/mosip-helm
       chart: keymanager
-      targetRevision: 12.0.1-B3  # PLACEHOLDER — voir README §Risques
+      targetRevision: 12.1.0  # PLACEHOLDER — voir README §Risques
       helm:
         releaseName: keymanager
         valueFiles:
@@ -188,6 +191,7 @@ spec:
   revisionHistoryLimit: 5
 
 ---
+
 # ---------------------------------------------------------------------------
 # 4) mosip-kernel — chart kernel (contient kernel-idgenerator-service)
 # ---------------------------------------------------------------------------
@@ -198,10 +202,10 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: mosip-kernel
+  name: mosip-idgenerator
   namespace: iun-gitops
   labels:
-    app.kubernetes.io/name: mosip-kernel
+    app.kubernetes.io/name: mosip-idgenerator
     app.kubernetes.io/part-of: iun-platform
     iun.sn/dpg: mosip
   annotations:
@@ -213,8 +217,8 @@ spec:
   project: iun-platform
   sources:
     - repoURL: https://mosip.github.io/mosip-helm
-      chart: kernel
-      targetRevision: 12.0.1-B3  # PLACEHOLDER — voir README §Risques
+      chart: idgenerator
+      targetRevision: 12.0.2  # PLACEHOLDER — voir README §Risques
       helm:
         releaseName: kernel
         valueFiles:
