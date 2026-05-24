@@ -111,7 +111,7 @@ databases:
         key: password
     dml: 1
     repoUrl: https://github.com/mosip/keymanager.git
-    branch: release-1.2.0.1
+    branch: release-1.2.0.x
   mosip_kernel:
     enabled: true
     host: "mosip-postgres-rw.mosip-dev.svc.cluster.local"
@@ -123,7 +123,7 @@ databases:
         key: password
     dml: 0
     repoUrl: https://github.com/mosip/commons.git
-    branch: release-1.2.0.1
+    branch: release-1.2.0.x
   mosip_idmap:
     enabled: false
     host: "mosip-postgres-rw.mosip-dev.svc.cluster.local"
