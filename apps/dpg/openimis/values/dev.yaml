@@ -1,100 +1,93 @@
 # ============================================================================
-# values dev — OpenIMIS (SQUELETTE — chart à créer)
+# values/dev.yaml — RÉFÉRENTIEL LOGIQUE OpenIMIS dev (PAS un chart Helm)
 # ============================================================================
-# OpenIMIS n'a PAS de Helm chart officiel. Ce fichier sert de référentiel de
-# configuration logique pour la phase de conversion docker-compose → K8s.
+# OpenIMIS n'a pas de Helm chart upstream officiel. Ce fichier documente, en
+# YAML lisible, l'intention de configuration "comme si" on avait un chart.
 #
-# Cf. README.md (Source officielle) pour le détail de l'arbitrage (A)/(B)/(C).
+# La configuration RÉELLE est aujourd'hui répartie entre :
+#   - manifests/02-configmap-app.yaml       → variables d'env génériques
+#   - manifests/03-configmap-openimis-sn.yaml → paramétrage métier Sénégal
+#   - manifests/01-secrets-dev.yaml          → credentials (PoC, à externaliser)
+#
+# Quand l'upstream mergera un Helm chart (ou si nous le livrons dans le cadre
+# de l'option C), nous transcrirons ces valeurs en `values.yaml` réel.
 # ============================================================================
 
 global:
   environment: development
   country: SN
+  upstreamVersion: "25.10"        # openimis-dist_dkr release Nov 2025
+  packagingDecision: "option-A"   # voir README §1
+
+# -- Images déployées (référencées en dur dans les manifests/)
+images:
+  backend:              ghcr.io/openimis/openimis-be:25.10
+  frontend:             ghcr.io/openimis/openimis-fe:25.10
+  postgres:             ghcr.io/openimis/openimis-pgsql:25.10
+  redis:                redis:7-alpine
+  rabbitmq:             rabbitmq:3.13-management
+  opensearch:           opensearchproject/opensearch:2.13.0
+  opensearchDashboards: opensearchproject/opensearch-dashboards:2.13.0
 
 # -- Modules OpenIMIS activés (TOR §4.4)
 modules:
-  # Affiliations multi-régimes
   insuree: true       # personnes assurées (clé IUN)
   family: true        # composition familiale
   contribution: true  # cotisations / collecteur
   claim: true         # prestations / liquidation
   policy: true        # contrats d'assurance
-  payment: true       # paiements (Wave / Orange Money)
+  payment: true       # paiements (Wave / Orange Money en iter 2)
   product: true       # produits d'assurance (CMU, IPRES, CSS, PNBSF)
 
-# -- Régimes sociaux sénégalais à modéliser (TOR §3.2 C3, §4.4)
+# -- Régimes sociaux sénégalais (cf. configmap-openimis-sn pour la source de vérité)
 products:
-  - code: CMU
-    name: "Couverture Maladie Universelle"
-    type: maladie
-    target: "tous citoyens"
-  - code: PNBSF
-    name: "Programme National Bourses Sécurité Familiale"
-    type: bourse
-    target: "ménages vulnérables"
-  - code: IPRES
-    name: "Institut de Prévoyance Retraite Sénégal"
-    type: retraite
-    target: "salariés secteur privé"
-  - code: CSS
-    name: "Caisse de Sécurité Sociale"
-    type: famille
-    target: "salariés et leurs ayants droit"
+  - { code: CMU,   name: "Couverture Maladie Universelle",                  type: maladie }
+  - { code: PNBSF, name: "Programme National Bourses Sécurité Familiale",   type: bourse }
+  - { code: IPRES, name: "Institut de Prévoyance Retraite Sénégal",         type: retraite }
+  - { code: CSS,   name: "Caisse de Sécurité Sociale",                      type: famille }
 
-# -- Persistence
+# -- Persistence (StorageClasses ODF)
 persistence:
-  postgres:
-    storageClass: ocs-storagecluster-ceph-rbd
-    size: 20Gi
-  opensearch:
-    storageClass: ocs-storagecluster-ceph-rbd
-    size: 30Gi
+  postgres:    { storageClass: ocs-storagecluster-ceph-rbd, size: 20Gi }
+  rabbitmq:    { storageClass: ocs-storagecluster-ceph-rbd, size: 5Gi  }
+  opensearch:  { storageClass: ocs-storagecluster-ceph-rbd, size: 30Gi }
+  photos:      { storageClass: ocs-storagecluster-cephfs,    size: 5Gi  }  # RWX requis
 
-# -- Intégrations externes (TOR §4.4)
+# -- Intégrations (TOR §4.4) — toutes désactivées en iter 1
 integrations:
   mosip:
-    enabled: false       # active après MOSIP kernel up — IUN comme clé primaire
-    endpoint: "http://mosip-id-repository.mosip-dev.svc.cluster.local:8080"
-  opencrvs:
-    enabled: false       # active après OpenCRVS up — affiliation auto à la naissance
-    endpoint: "http://opencrvs-gateway.opencrvs-dev.svc.cluster.local:7070"
-
-  # Sync hebdomadaire IPRES, vérification temps réel CSS, mise à jour quotidienne CMU/MSAS
-  externalSystems:
-    ipres:
-      enabled: false
-      syncFrequency: weekly
-    css:
-      enabled: false
-      mode: realtime
-    cmu:
-      enabled: false
-      syncFrequency: daily
-
-# -- Paiements mobiles (TOR §4.4)
-mobilePayments:
-  orangeMoney:
-    enabled: false  # activer en phase pilote
-  wave:
     enabled: false
+    endpoint: "http://mosip-id-repository.mosip-dev.svc.cluster.local:8080"
+    role: "IUN comme clé primaire de chaque Insuree"
+  opencrvs:
+    enabled: false
+    endpoint: "http://opencrvs-gateway.opencrvs-dev.svc.cluster.local:7070"
+    role: "ouverture droits CMU à la naissance (TOR §3.4.1)"
+  externalSystems:
+    ipres: { enabled: false, syncFrequency: weekly }
+    css:   { enabled: false, mode: realtime }
+    cmu:   { enabled: false, syncFrequency: daily }
 
-# -- Trésor Public (TOR §4.4 — ordres de virement PNBSF)
+# -- Paiements (TOR §4.4) — désactivés en iter 1
+mobilePayments:
+  orangeMoney: { enabled: false }
+  wave:        { enabled: false }
 treasury:
   enabled: false
-  endpoint: ""
 
-# -- Auth
+# -- Auth (iter 1 : auth interne OpenIMIS / iter 2 : RHBK realm IUN)
 auth:
-  external: false  # OpenIMIS embarque son IAM par défaut. À harmoniser RHBK.
+  externalProvider: false
 
-# -- Ressources sandbox
-resources:
-  requests:
-    cpu: 200m
-    memory: 512Mi
-  limits:
-    cpu: 1000m
-    memory: 2Gi
-
-ingress:
-  enabled: false
+# -- Ressources sandbox (request / limit / replicas par composant)
+sizing:
+  backend:    { cpu: "300m/1500m", mem: "768Mi/2Gi",   replicas: 1 }
+  worker:     { cpu: "200m/1000m", mem: "512Mi/1.5Gi", replicas: 2 }
+  frontend:   { cpu: "100m/500m",  mem: "256Mi/512Mi", replicas: 1 }
+  postgres:   { cpu: "200m/1000m", mem: "512Mi/2Gi",   replicas: 1 }
+  redis:      { cpu: "50m/300m",   mem: "128Mi/512Mi", replicas: 1 }
+  rabbitmq:   { cpu: "100m/500m",  mem: "256Mi/1Gi",   replicas: 1 }
+  opensearch: { cpu: "300m/1500m", mem: "1Gi/2Gi",     replicas: 1 }
+  dashboards: { cpu: "100m/500m",  mem: "512Mi/1Gi",   replicas: 1 }
+# Total requests : ~1.55 vCPU / 4.45 GiB  (OK sandbox partagée)
+# Total limits   : ~6.30 vCPU / 11.5 GiB

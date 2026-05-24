@@ -1,0 +1,28 @@
+# ============================================================================
+# Route OCP — exposition publique du frontend OpenIMIS
+# ============================================================================
+# Le router OCP termine TLS (cert wildcard cluster). Hostname à aligner avec
+# le `SITE_URL` / `HOSTS` / `NEW_OPENIMIS_HOST` dans openimis-app-config.
+# ============================================================================
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: openimis-frontend
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: frontend
+  annotations:
+    haproxy.router.openshift.io/timeout: "60s"
+spec:
+  host: openimis-dev.apps.origins.heritage.africa
+  to:
+    kind: Service
+    name: openimis-frontend
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

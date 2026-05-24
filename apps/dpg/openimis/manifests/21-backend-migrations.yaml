@@ -1,0 +1,83 @@
+# ============================================================================
+# Job migrations — équivalent du service compose `migrations` (command: init)
+# ============================================================================
+# Tourne UNE FOIS au premier déploiement (et à chaque bump majeur de release
+# OpenIMIS). Argo CD le rejouera via le hook `argocd.argoproj.io/hook: Sync`
+# si on bump l'image — voir backlog iter 2 pour la stratégie de migration.
+# ============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openimis-be-migrations
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: backend-migrations
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: backend-migrations
+    spec:
+      serviceAccountName: openimis-sa
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-db
+          image: ghcr.io/openimis/openimis-pgsql:25.10
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for openimis-db:5432 ..."
+              until pg_isready -h openimis-db -p 5432 -U "$DB_USER"; do
+                sleep 3
+              done
+              echo "DB ready."
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: openimis-db
+                  key: DB_USER
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+      containers:
+        - name: migrations
+          image: ghcr.io/openimis/openimis-be:25.10
+          imagePullPolicy: IfNotPresent
+          command: ["init"]
+          envFrom:
+            - configMapRef:
+                name: openimis-app-config
+            - secretRef:
+                name: openimis-db
+            - secretRef:
+                name: openimis-django
+            - secretRef:
+                name: openimis-opensearch
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault

@@ -1,0 +1,101 @@
+# ============================================================================
+# RabbitMQ — broker AMQP pour Celery (worker async)
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimis-rabbitmq
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: rabbitmq
+spec:
+  type: ClusterIP
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+      protocol: TCP
+    - name: management
+      port: 15672
+      targetPort: 15672
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: rabbitmq
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: openimis-rabbitmq
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: rabbitmq
+spec:
+  serviceName: openimis-rabbitmq
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: rabbitmq
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: rabbitmq
+    spec:
+      serviceAccountName: openimis-sa
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.13-management
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: management
+              containerPort: 15672
+          envFrom:
+            - secretRef:
+                name: openimis-rabbitmq
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "check_running"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 15
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: openimis
+          app.kubernetes.io/component: rabbitmq
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ocs-storagecluster-ceph-rbd
+        resources:
+          requests:
+            storage: 5Gi

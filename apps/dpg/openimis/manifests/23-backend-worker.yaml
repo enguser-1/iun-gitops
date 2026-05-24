@@ -1,0 +1,89 @@
+# ============================================================================
+# Backend worker Celery (compose service `worker`, command: worker, replicas: 3)
+# ============================================================================
+# Iter 1 sandbox : 2 répliques au lieu de 3 pour préserver le quota sandbox.
+# Iter 2 : passer à 3+ une fois sizing pilote validé.
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimis-worker
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: openimis-sa
+      containers:
+        - name: worker
+          image: ghcr.io/openimis/openimis-be:25.10
+          imagePullPolicy: IfNotPresent
+          command: ["worker"]
+          envFrom:
+            - configMapRef:
+                name: openimis-app-config
+            - secretRef:
+                name: openimis-db
+            - secretRef:
+                name: openimis-django
+            - secretRef:
+                name: openimis-opensearch
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: openimis-redis
+                  key: REDIS_PASSWORD
+            - name: CACHE_OPTIONS
+              value: '{"PASSWORD":"$(REDIS_PASSWORD)"}'
+          volumeMounts:
+            - name: photos
+              mountPath: /openimis-be/openIMIS/images/insurees
+          # Worker Celery — pas d'endpoint HTTP, on probe le process Python
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "celery -A openIMIS inspect ping -d celery@$HOSTNAME 2>/dev/null || pgrep -f celery"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pgrep -f celery"]
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 10
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1.5Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: photos
+          persistentVolumeClaim:
+            claimName: openimis-photos

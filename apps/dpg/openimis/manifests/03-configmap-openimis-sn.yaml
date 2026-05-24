@@ -1,0 +1,133 @@
+# ============================================================================
+# ConfigMap "openimis-sn" — paramétrage métier Sénégal
+# ============================================================================
+# Référence TOR `proposition_IUN_Senegal_vf.docx` §3.2 C3, §4.4 :
+# OpenIMIS gère les affiliations / cotisations / prestations pour 4 régimes
+# sénégalais ; l'IUN MOSIP est la clé primaire de chaque `Insuree`.
+#
+# Cette ConfigMap est CHARGÉE par le backend en post-init via un Job de seed
+# (à programmer iter 2 : `apps/integration/seed-openimis-sn/`). En iter 1 elle
+# sert de référence documentaire pour les opérateurs admin OpenIMIS.
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openimis-sn-config
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: country-config
+    iun.sn/country: SN
+  annotations:
+    iun.sn/tor-ref: "§3.2 C3, §4.4"
+data:
+  country.yaml: |
+    country:
+      iso2: SN
+      iso3: SEN
+      name: "Sénégal"
+      currency: XOF
+      timezone: Africa/Dakar
+      language_primary: fr
+      language_secondary: [wo, ff]
+    # ------------------------------------------------------------------------
+    # Programmes de protection sociale ciblés (TOR §4.4)
+    # ------------------------------------------------------------------------
+    products:
+      - code: CMU
+        name: "Couverture Maladie Universelle"
+        type: maladie
+        target: "Tous citoyens"
+        steward: "Agence Nationale CMU (ANCMU)"
+        sync_frequency: daily
+        # Branchement OpenCRVS : ouverture droits CMU à la naissance (TOR §3.4.1)
+        opencrvs_trigger: birth_registration
+      - code: PNBSF
+        name: "Programme National Bourses de Sécurité Familiale"
+        type: bourse
+        target: "Ménages vulnérables (Registre National Unique)"
+        steward: "Délégation Générale à la Protection Sociale et Solidarité Nationale"
+        sync_frequency: monthly
+        payment_channels: [orange_money, wave, treasury]
+      - code: IPRES
+        name: "Institut de Prévoyance Retraite Sénégal"
+        type: retraite
+        target: "Salariés secteur privé"
+        steward: "IPRES"
+        sync_frequency: weekly
+      - code: CSS
+        name: "Caisse de Sécurité Sociale"
+        type: famille
+        target: "Salariés et ayants droit"
+        steward: "CSS"
+        sync_frequency: realtime
+    # ------------------------------------------------------------------------
+    # Codes administratifs Sénégal (alignement avec OpenCRVS)
+    # ------------------------------------------------------------------------
+    # Source : Division Statistique ANSD — découpage administratif 2024
+    administrative_levels:
+      - level: 1
+        label: "Région"
+        count: 14
+      - level: 2
+        label: "Département"
+        count: 46
+      - level: 3
+        label: "Commune"
+        count: 552
+      - level: 4
+        label: "Quartier / Village"
+    regions:
+      # Codes officiels ANSD — à compléter au seed
+      - { code: "01", name: "Dakar" }
+      - { code: "02", name: "Diourbel" }
+      - { code: "03", name: "Fatick" }
+      - { code: "04", name: "Kaffrine" }
+      - { code: "05", name: "Kaolack" }
+      - { code: "06", name: "Kédougou" }
+      - { code: "07", name: "Kolda" }
+      - { code: "08", name: "Louga" }
+      - { code: "09", name: "Matam" }
+      - { code: "10", name: "Saint-Louis" }
+      - { code: "11", name: "Sédhiou" }
+      - { code: "12", name: "Tambacounda" }
+      - { code: "13", name: "Thiès" }
+      - { code: "14", name: "Ziguinchor" }
+    # ------------------------------------------------------------------------
+    # Intégrations IUN (active = false en iter 1 — dépendances pas up)
+    # ------------------------------------------------------------------------
+    integrations:
+      mosip:
+        enabled: false
+        kernel_endpoint: "http://mosip-id-repository.mosip-dev.svc.cluster.local:8080"
+        role: "fournit l'IUN comme clé primaire de chaque Insuree OpenIMIS"
+      opencrvs:
+        enabled: false
+        gateway_endpoint: "http://opencrvs-gateway.opencrvs-dev.svc.cluster.local:7070"
+        role: "déclenche ouverture droits CMU à l'enregistrement de naissance (TOR §3.4.1)"
+      external_systems:
+        ipres:
+          enabled: false
+          sync_frequency: weekly
+        css:
+          enabled: false
+          mode: realtime
+          gateway: "3scale-prod"
+        cmu:
+          enabled: false
+          sync_frequency: daily
+    # ------------------------------------------------------------------------
+    # Paiements (TOR §4.4)
+    # ------------------------------------------------------------------------
+    payments:
+      mobile_money:
+        orange_money:
+          enabled: false
+          notes: "active en phase pilote — sandbox API Orange Sonatel"
+        wave:
+          enabled: false
+          notes: "active en phase pilote — Wave for Business API"
+      treasury:
+        enabled: false
+        endpoint: ""
+        notes: "Ordres de virement Trésor Public pour PNBSF — co-définition avec Direction Trésor requise"

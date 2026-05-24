@@ -3,22 +3,15 @@
 # ============================================================================
 # Rôle TOR §3.2 C3, §4.4 — gestion des affiliations / cotisations / prestations
 # pour CMU, IPRES, CSS, PNBSF (Programme National Bourses Sécurité Familiale).
-# IUN comme clé primaire de toutes les affiliations.
+# IUN MOSIP comme clé primaire de toutes les affiliations.
 #
-# ⚠ AVERTISSEMENT MAJEUR — source officielle :
-#   OpenIMIS NE FOURNIT PAS de Helm chart officiel à ce jour. Le déploiement
-#   canonique est `openimis-dist_dkr` (docker-compose all-in-one).
+# Packaging : OpenIMIS NE FOURNIT PAS de Helm chart upstream officiel. Après
+# arbitrage des 3 options (A: kompose+kustomize / B: fork communautaire /
+# C: contribution upstream), nous avons retenu **option A** — voir README §1.
 #
-#   Conséquence : nous avons trois options, toutes documentées dans le README :
-#     (A) Adapter docker-compose → Kubernetes manifests via `kompose convert`
-#         puis kustomize / Helm fait maison. Effort moyen.
-#     (B) Cloner et étendre un fork communautaire (qq fork OpenIMIS Helm
-#         existent en early-stage sur GitHub — à auditer).
-#     (C) Demander à la communauté OpenIMIS si une initiative Helm est en
-#         cours (canal #deployment sur leur Atlassian Wiki / community).
-#
-# Cette Application Argo CD est un PLACEHOLDER qui pointe sur un repo
-# kustomize interne à créer. À reconfigurer après l'arbitrage (A) / (B) / (C).
+# Cette Application Argo CD pointe désormais sur `manifests/` (Kustomize plain,
+# pas de Helm) qui héberge les manifestes K8s adaptés du docker-compose
+# officiel `openimis-dist_dkr` v25.10.
 # ============================================================================
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -32,33 +25,40 @@ metadata:
     iun.sn/dpg: openimis
   annotations:
     iun.sn/tor-ref: "§3.2 C3, §4.4"
-    iun.sn/status: "placeholder — pas de Helm chart officiel upstream, voir README"
+    iun.sn/packaging: "option-A — kompose convert + kustomize OCP-adapted"
+    iun.sn/upstream-version: "25.10 (openimis-dist_dkr Nov 2025)"
+    iun.sn/status: "iter 1 — MVP déployable (DB+Redis+RabbitMQ+OS+BE+Worker+FE+Route)"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: iun-platform
   source:
-    # ⚠ PLACEHOLDER — pointe sur un sous-chemin de ce repo qui hébergera, en
-    # phase 1, les manifests Kubernetes adaptés du docker-compose officiel.
-    # Le chemin n'existe pas encore : c'est le chantier T+1 OpenIMIS.
     repoURL: https://github.com/enguser-1/iun-gitops.git
     targetRevision: HEAD
-    path: apps/dpg/openimis/manifests-kompose-tbd  # à créer
-    # Pas de helm: ici tant qu'on n'a pas tranché (A)/(B)/(C). Kustomize plain.
+    path: apps/dpg/openimis/manifests
+    # Kustomize plain — pas de Helm tant que l'upstream n'aura pas mergé un chart
   destination:
     server: https://kubernetes.default.svc
     namespace: openimis-dev
   syncPolicy:
     automated:
-      prune: false
-      selfHeal: false
+      prune: false        # iter 1 : on garde manuel pour observer les diffs
+      selfHeal: false     # idem
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 3
       backoff:
         duration: 30s
         factor: 2
         maxDuration: 5m
+  ignoreDifferences:
+    # OCP injecte des annotations et secrets ServiceAccount à la volée
+    - group: ""
+      kind: ServiceAccount
+      jsonPointers:
+        - /imagePullSecrets
+        - /secrets
   revisionHistoryLimit: 5

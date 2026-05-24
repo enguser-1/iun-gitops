@@ -1,0 +1,109 @@
+# ============================================================================
+# Postgres OpenIMIS — image custom upstream avec schéma préchargé
+# ============================================================================
+# Source compose officielle :
+#   ghcr.io/openimis/openimis-pgsql:25.10
+# Cette image embarque les migrations initiales OpenIMIS — on la garde en
+# iter 1 pour rester aligné. Migration vers CNPG (déjà installé sur le cluster)
+# en iter 2 : nécessitera un Job de bootstrap qui rejoue les migrations.
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimis-db
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: openimis-db
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: openimis-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: postgres
+    spec:
+      serviceAccountName: openimis-sa
+      containers:
+        - name: postgres
+          image: ghcr.io/openimis/openimis-pgsql:25.10
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: openimis-db
+            - configMapRef:
+                name: openimis-app-config  # DEMO_DATASET notamment
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "openimis", "-d", "openimis"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "openimis", "-d", "openimis"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: openimis
+          app.kubernetes.io/component: postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ocs-storagecluster-ceph-rbd
+        resources:
+          requests:
+            storage: 20Gi

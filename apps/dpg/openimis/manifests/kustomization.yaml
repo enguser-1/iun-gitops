@@ -1,0 +1,36 @@
+# ============================================================================
+# apps/dpg/openimis/manifests — Kustomization OpenIMIS MVP (option A, kompose-cleaned)
+# ============================================================================
+# Source upstream :
+#   https://github.com/openimis/openimis-dist_dkr  (compose.{base,postgresql,
+#   openSearch,cache}.yml)
+# Démarche : `kompose convert` initial, puis relecture / nettoyage / adaptation
+# OCP (SCC nonroot-v2, healthchecks K8s natifs, Routes au lieu de Traefik,
+# Secrets externalisés, PVC RWX pour photos partagées backend/worker).
+# ============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: openimis-dev
+
+commonLabels:
+  app.kubernetes.io/part-of: iun-platform
+  iun.sn/dpg: openimis
+  iun.sn/env: dev
+
+resources:
+  - namespace.yaml
+  - 00-serviceaccount.yaml
+  - 01-secrets-dev.yaml
+  - 02-configmap-app.yaml
+  - 03-configmap-openimis-sn.yaml
+  - 10-postgres.yaml
+  - 11-redis.yaml
+  - 12-rabbitmq.yaml
+  - 13-opensearch.yaml
+  - 14-opensearch-dashboards.yaml
+  - 20-photos-pvc.yaml
+  - 21-backend-migrations.yaml
+  - 22-backend-api.yaml
+  - 23-backend-worker.yaml
+  - 30-frontend.yaml
+  - 31-frontend-route.yaml

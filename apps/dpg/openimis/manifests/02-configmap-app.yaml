@@ -1,0 +1,42 @@
+# ============================================================================
+# ConfigMap générique OpenIMIS — variables d'env partagées backend + worker + FE
+# ============================================================================
+# Mappe les variables `.env` du docker-compose officiel openimis-dist_dkr
+# (https://github.com/openimis/openimis-dist_dkr) vers une ConfigMap K8s,
+# hors valeurs secrètes (mots de passe, clés) qui restent dans 01-secrets-dev.yaml.
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openimis-app-config
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: config
+data:
+  # -- DB driver
+  DB_DEFAULT: "postgresql"
+  DB_HOST: "openimis-db"
+  DB_PORT: "5432"
+  DB_ENGINE: "django.db.backends.postgresql"
+  DEMO_DATASET: "True"  # iter 1 — données de démo OpenIMIS chargées au seed
+  # -- Backend Django
+  MODE: "Dev"
+  SITE_ROOT: "api"
+  # SITE_URL & HOSTS pilotés via Route OCP — voir 31-frontend-route.yaml
+  SITE_URL: "openimis-dev.apps.origins.heritage.africa"
+  HOSTS: "openimis-dev.apps.origins.heritage.africa,frontend,backend,localhost"
+  # -- Celery / RabbitMQ
+  CELERY_BROKER_URL: "amqp://openimis-rabbitmq:5672"
+  # -- Cache Redis
+  CACHE_BACKEND: "django_redis.cache.RedisCache"
+  CACHE_URL: "redis://openimis-redis:6379/1"
+  # CACHE_OPTIONS : injecté en runtime via env (password depuis Secret)
+  # -- OpenSearch
+  OPENSEARCH_HOSTS: "http://openimis-opensearch:9200"
+  # -- Frontend (React)
+  REACT_APP_API_URL: "api"
+  NEW_OPENIMIS_HOST: "openimis-dev.apps.origins.heritage.africa"
+  # OPENIMIS_CONF_JSON : config UI modulaire — placeholder iter 1
+  OPENIMIS_FE_CONF_JSON: "{}"
+  REACT_APP_SENTRY_DSN: ""

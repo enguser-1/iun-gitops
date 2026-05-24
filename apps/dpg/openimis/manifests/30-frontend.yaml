@@ -1,0 +1,101 @@
+# ============================================================================
+# Frontend React + NGINX — compose service `frontend`
+# ============================================================================
+# Le compose officiel branche le FE sur ports 80/443 et fait proxy `/api` vers
+# le backend via NGINX. Sur OCP, on supprime l'écoute HTTPS interne (TLS
+# délégué à la Route OCP) et on garde uniquement 8080 (port non-privilégié).
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimis-frontend
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: frontend
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimis-frontend
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: frontend
+    spec:
+      serviceAccountName: openimis-sa
+      containers:
+        - name: frontend
+          image: ghcr.io/openimis/openimis-fe:25.10
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: openimis-app-config
+          env:
+            - name: OPENSEARCH_BASIC_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openimis-opensearch
+                  key: OPENSEARCH_BASIC_TOKEN
+            # L'image FE écoute sur 80 par défaut — surcharge pour OCP (port < 1024
+            # interdit en restricted-v2). Si la conf NGINX embarquée refuse de
+            # binder sur 8080, escalader vers SCC `nonroot-v2` (root group 0 OK).
+            - name: NGINX_PORT
+              value: "8080"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault

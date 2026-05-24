@@ -1,0 +1,87 @@
+# ============================================================================
+# OpenSearch Dashboards — UI search/analytics embarquée derrière /opensearch
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimis-opensearch-dashboards
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: opensearch-dashboards
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 5601
+      targetPort: 5601
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: opensearch-dashboards
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimis-opensearch-dashboards
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: opensearch-dashboards
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: opensearch-dashboards
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: opensearch-dashboards
+    spec:
+      serviceAccountName: openimis-sa
+      containers:
+        - name: dashboards
+          image: opensearchproject/opensearch-dashboards:2.13.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5601
+          env:
+            - name: OPENSEARCH_HOSTS
+              value: '["http://openimis-opensearch:9200"]'
+            - name: DISABLE_SECURITY_DASHBOARDS_PLUGIN
+              value: "true"
+            - name: SERVER_BASEPATH
+              value: /opensearch
+            - name: SERVER_REWRITEBASEPATH
+              value: "true"
+          readinessProbe:
+            httpGet:
+              path: /opensearch/api/status
+              port: 5601
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /opensearch/api/status
+              port: 5601
+            initialDelaySeconds: 120
+            periodSeconds: 60
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault

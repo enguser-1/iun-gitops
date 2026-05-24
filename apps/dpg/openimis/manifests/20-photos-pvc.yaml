@@ -1,0 +1,21 @@
+# ============================================================================
+# PVC partagé "openimis-photos"
+# ============================================================================
+# Le compose officiel monte le volume `photos` à la fois sur backend ET worker
+# (depends_on x-api &default-api volumes). Sur K8s, cela impose RWX.
+# Sur OCP avec ODF, on utilise la StorageClass CephFS pour le RWX.
+# ============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openimis-photos
+  namespace: openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: shared-storage
+spec:
+  accessModes: ["ReadWriteMany"]
+  storageClassName: ocs-storagecluster-cephfs
+  resources:
+    requests:
+      storage: 5Gi
