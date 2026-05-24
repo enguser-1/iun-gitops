@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # values dev — chart `softhsm` (release name `softhsm-kernel`)
 # ============================================================================
 # Consommé par l'Application Argo CD `mosip-softhsm-kernel` (sync-wave 7).
@@ -29,7 +29,7 @@ image:
 # https://github.com/mosip/mosip-infra/blob/v1.2.0.2/deployment/v3/external/hsm/softhsm/README.md).
 persistence:
   enabled: true
-  storageClass: ocs-storagecluster-ceph-rbd
+  storageClass: ocs-external-storagecluster-ceph-rbd
   accessMode: ReadWriteOnce
   size: 1Gi
   mountPath: /softhsm/tokens

@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # CloudNativePG — Cluster Postgres pour MOSIP MVP
 # ============================================================================
 # Backend Postgres pour kernel + keymanager + audit. Géré par l'opérateur
@@ -64,9 +64,9 @@ spec:
 
   storage:
     # ODF block storage (présent sur le cluster — cf. SYNTHESE §socle).
-    # En staging/prod : 100 Gi minimum + classe `ocs-storagecluster-ceph-rbd`
+    # En staging/prod : 100 Gi minimum + classe `ocs-external-storagecluster-ceph-rbd`
     # avec snapshot policy.
-    storageClass: ocs-storagecluster-ceph-rbd
+    storageClass: ocs-external-storagecluster-ceph-rbd
     size: 10Gi
 
   # Ressources sandbox dev (CLUSTER PARTAGÉ)
