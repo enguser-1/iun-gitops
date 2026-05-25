@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # RabbitMQ — broker AMQP pour Celery (worker async)
 # ============================================================================
 apiVersion: v1
@@ -55,6 +55,72 @@ spec:
         runAsUser: 999
         runAsGroup: 999
         fsGroup: 999
+      # ----------------------------------------------------------------------
+      # initContainer cookie-fix
+      # ----------------------------------------------------------------------
+      # Root cause : sur OCP avec PVC ReadWriteOnce + image rabbitmq:3.13, le
+      # .erlang.cookie auto-genere par Erlang heritait d'un umask 0022 (mode 0644)
+      # alors que auth.erl exige mode & 8#077 == 0 (donc 0600 ou 0400). Aussi,
+      # si le cookie a deja ete ecrit par un container precedent avec un autre
+      # UID (random SCC), un chmod simple par 999 echoue (EPERM).
+      #
+      # Strategie : init container en UID 0 + CAP CHOWN/FOWNER/DAC_OVERRIDE
+      # (anyuid SCC deja accorde via openshift.io/required-scc) qui :
+      #   1. inspecte /var/lib/rabbitmq/.erlang.cookie
+      #   2. si mode != 600/400 -> supprime
+      #   3. si absent -> regenere 48 hex chars depuis /dev/urandom (umask 077)
+      #   4. force chown 999:999 + chmod 600
+      # Cf. https://www.rabbitmq.com/clustering.html#erlang-cookie
+      initContainers:
+        - name: cookie-fix
+          image: rabbitmq:3.13-management
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              COOKIE=/var/lib/rabbitmq/.erlang.cookie
+              echo "[cookie-fix] etat initial de /var/lib/rabbitmq :"
+              ls -la /var/lib/rabbitmq/ 2>/dev/null || true
+
+              if [ -f "$COOKIE" ]; then
+                CURMODE=$(stat -c '%a' "$COOKIE" 2>/dev/null || echo "???")
+                echo "[cookie-fix] cookie existant, mode actuel = $CURMODE"
+                if [ "$CURMODE" != "600" ] && [ "$CURMODE" != "400" ]; then
+                  echo "[cookie-fix] mode $CURMODE refuse par Erlang -> suppression"
+                  rm -f "$COOKIE"
+                fi
+              fi
+
+              if [ ! -s "$COOKIE" ]; then
+                echo "[cookie-fix] generation cookie aleatoire (48 hex chars)"
+                umask 077
+                head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$COOKIE"
+              fi
+
+              chown 999:999 "$COOKIE"
+              chmod 600 "$COOKIE"
+
+              echo "[cookie-fix] resultat final :"
+              stat -c '  %n -> mode=%a owner=%U(%u):%G(%g) size=%s' "$COOKIE"
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
       containers:
         - name: rabbitmq
           image: rabbitmq:3.13-management
