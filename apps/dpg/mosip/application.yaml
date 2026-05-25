@@ -1,7 +1,7 @@
 ﻿# ============================================================================
 # Argo CD Applications — MOSIP MVP IUN (itération 1 — étendue v2)
 # ============================================================================
-# Objectif TOR §4.1.2 / §4.1.3 : génération d'un IUN 9 chiffres + Verhoeff.
+# Objectif TOR §4.1.2 / §4.1.3 (révisé ADR-R01 2026-05-25) : génération d'un IUN 10 chiffres + Verhoeff.
 # Verhoeff est CÂBLÉ EN DUR dans kernel-idgenerator-service.
 #
 # Topologie v2 (7 Applications) — voir README.md pour le détail.
@@ -185,7 +185,7 @@ metadata:
     iun.sn/dpg: mosip
   annotations:
     argocd.argoproj.io/sync-wave: "10"
-    iun.sn/tor-ref: "§4.1.2 (overrides IUN length=9)"
+    iun.sn/tor-ref: "§4.1.2 (config IUN length=10 — ADR-R01 2026-05-25)"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -345,5 +345,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-    retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
-  revisionHistoryLimit: 5
+    retry: {limit: 3, backoff: {duration: 30s, fac

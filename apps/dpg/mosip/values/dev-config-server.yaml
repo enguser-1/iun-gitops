@@ -7,11 +7,12 @@
 # MOSIP. Lit depuis un repo Git public (par défaut mosip/mosip-config) et
 # autorise des overrides via env-vars `overrides_*` (convention MOSIP).
 #
-# ⚠ Stratégie itération 1 :
+# ⚠ Stratégie itération 1 (révisée ADR-R01 2026-05-25) :
 #   - On NE FORKE PAS mosip-config (overhead inutile pour un MVP).
-#   - On override la longueur UIN via env-var `overrides_mosip_kernel_uin_length=9`
+#   - On s'aligne sur le défaut MOSIP `overrides_mosip_kernel_uin_length=10`
 #     (le chart config-server transforme ces env-vars en property keys via une
-#     règle de "remplacer _ par ." dans le préfixe `overrides_`).
+#     règle de "remplacer _ par ." dans le préfixe `overrides_`). L'ancienne
+#     valeur 9 a été abandonnée — cf. ADR-R01 et research/verhoeff/MOSIP-UIN-FEASIBILITY.md.
 #   - À l'itération 2, quand on aura besoin de >10 overrides, on forkera le
 #     repo mosip-config dans enguser-1/iun-sn-mosip-config et on pointera ce
 #     fork ici.
@@ -33,16 +34,17 @@ gitRepo:
   # pour le repo upstream qui est plat).
   searchPaths: ""
 
-# -- Overrides Sénégal (clés property remontées au boot)
+# -- Overrides Sénégal (clés property remontées au boot) — ADR-R01 2026-05-25
 # Convention MOSIP config-server : env-vars commençant par `overrides_` sont
 # transformées en property keys :
-#     overrides_mosip_kernel_uin_length = "9"  →  mosip.kernel.uin.length = 9
+#     overrides_mosip_kernel_uin_length = "10"  →  mosip.kernel.uin.length = 10
 # On reproduit ICI les mêmes valeurs que dans values/dev.yaml du chart kernel
 # (SOURCE de vérité applicative côté kernel ; ici c'est le RELAIS Spring Cloud
 # qui sert ces clés à tous les modules MOSIP, pas juste au kernel).
+# Length=10 et filtres par défaut MOSIP — aucune dérogation à négocier.
 extraEnv:
   - name: overrides_mosip_kernel_uin_length
-    value: "9"
+    value: "10"
   - name: overrides_mosip_kernel_uin_uins_to_generate
     value: "1000"
   - name: overrides_mosip_kernel_uin_min_unused_threshold
@@ -54,9 +56,9 @@ extraEnv:
   - name: overrides_mosip_kernel_uin_length_repeating_limit
     value: "2"
   - name: overrides_mosip_kernel_uin_length_reverse_digits_limit
-    value: "4"
+    value: "5"
   - name: overrides_mosip_kernel_uin_length_digits_limit
-    value: "4"
+    value: "5"
   - name: overrides_mosip_kernel_uin_length_conjugative_even_digits_limit
     value: "3"
   - name: overrides_mosip_kernel_uin_not_start_with
@@ -82,15 +84,4 @@ service:
 ingress:
   enabled: false
 
-# -- Probes Spring Boot
-probes:
-  readiness:
-    httpGet:
-      path: /actuator/health/readiness
-      port: 51000
-    initialDelaySeconds: 30
-  liveness:
-    httpGet:
-      path: /actuator/health/liveness
-      port: 51000
-    initialDelaySeconds: 60
+# -- Probes Sp

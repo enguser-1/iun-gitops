@@ -2,10 +2,11 @@
 
 ## Objectif
 
-Démontrer **bout-en-bout** la génération d'un IUN au format Sénégal (9 chiffres
-dont le 9ᵉ est un check digit Verhoeff valide) via `kernel-idgenerator-service`
-sur le cluster sandbox OCP 4.16. Tout le reste de MOSIP (enrôlement, IDA,
-resident-services, ABIS, HSM Luna) est différé à l'itération 2+.
+Démontrer **bout-en-bout** la génération d'un IUN au format Sénégal (10 chiffres
+dont le 10ᵉ est un check digit Verhoeff valide — défaut MOSIP, ADR-R01 du
+2026-05-25) via `kernel-idgenerator-service` sur le cluster sandbox OCP 4.16.
+Tout le reste de MOSIP (enrôlement, IDA, resident-services, ABIS, HSM Luna)
+est différé à l'itération 2+.
 
 Cible TOR : **§4.1.2 + §4.1.3 + §4.1.4**.
 
@@ -105,21 +106,24 @@ bootstrap    global    artifactory     softhsm-kernel      config-      keymanag
 | `mosip/softhsm` (releaseName=`softhsm-kernel`) | SoftHSM2 logiciel pour la crypto kernel (signature, dérivation). | `softhsm-kernel-share` (envFrom keymanager) | **DEV ONLY**. Pin `iun-dev-pin` stocké en clair dans CM. Migration HSM Luna FIPS 140-2 L3 obligatoire pré-staging (TOR §4.3.2). |
 | ConfigMap `global` (manifeste, pas chart) | Config cluster-wide (hostnames, pins HSM, profils Spring). | (elle-même) | Pins HSM en clair → idem softhsm. |
 
-## Personnalisations Sénégal (overrides config-server)
+## Personnalisations Sénégal (overrides config-server) — ADR-R01 2026-05-25
 
 Configurées dans `values/dev-config-server.yaml` via env-vars `overrides_*`
-(convention MOSIP Spring Cloud) :
+(convention MOSIP Spring Cloud). Suite à l'ADR-R01 (2026-05-25), le format
+est aligné sur le défaut MOSIP (10 chiffres) — l'ancien override 9 chiffres
+a été abandonné, démontré mathématiquement impossible. Aucun override de
+filtre anti-pattern n'est désormais nécessaire :
 
-| Clé property MOSIP | Défaut MOSIP | Override Sénégal | Pourquoi |
+| Clé property MOSIP | Défaut MOSIP | Valeur Sénégal | Pourquoi |
 |---|---|---|---|
-| `mosip.kernel.uin.length` | `10` | **`9`** | TOR §4.1.3 |
+| `mosip.kernel.uin.length` | `10` | `10` | TOR §4.1.3 (révisé ADR-R01) — défaut MOSIP |
 | `mosip.kernel.uin.uins-to-generate` | `500000` | `1000` | Sandbox dev — pool minimal |
 | `mosip.kernel.uin.min-unused-threshold` | `200000` | `100` | Idem |
-| `mosip.kernel.uin.length.reverse-digits-limit` | `5` | `4` | Filtre tuné pour length=10, relaxé pour length=9 |
-| `mosip.kernel.uin.length.digits-limit` | `5` | `4` | Idem |
+| `mosip.kernel.uin.length.reverse-digits-limit` | `5` | `5` | Défaut MOSIP conservé |
+| `mosip.kernel.uin.length.digits-limit` | `5` | `5` | Défaut MOSIP conservé |
 
 **Verhoeff** : codé en dur dans `kernel-idgenerator-service`.
-**PAS DE PROPERTY POUR ÇA**. Le 9ᵉ chiffre est *toujours* le check digit
+**PAS DE PROPERTY POUR ÇA**. Le 10ᵉ chiffre est *toujours* le check digit
 Verhoeff.
 
 ## Prérequis cluster (déjà présents)
@@ -222,7 +226,7 @@ $uin = $resp.response.uin
 Stop-Job $job; Remove-Job $job
 ```
 
-### Étape C — Vérifier qu'on a 9 chiffres et que le pool persiste
+### Étape C — Vérifier qu'on a 10 chiffres et que le pool persiste
 
 ```powershell
 $pgpod = (Get-OcJson -OcArgs @('get','pods','-n','mosip-dev', `
@@ -230,7 +234,7 @@ $pgpod = (Get-OcJson -OcArgs @('get','pods','-n','mosip-dev', `
 Invoke-Oc -OcArgs @('exec',$pgpod,'-n','mosip-dev','-c','postgres','--', `
   'psql','-d','mosip_kernel','-c', `
   "SELECT length(uin), status, count(*) FROM mosip_kernel.uin GROUP BY 1,2 LIMIT 5;")
-# Attendu : length(uin)=9, status in {ASSIGNED, UNASSIGNED, ISSUED}
+# Attendu : length(uin)=10, status in {ASSIGNED, UNASSIGNED, ISSUED}
 ```
 
 ## Risques / incertitudes — itération 1 (mise à jour v2)
@@ -260,12 +264,14 @@ Invoke-Oc -OcArgs @('exec',$pgpod,'-n','mosip-dev','-c','postgres','--', `
    Aucune valeur cryptographique. En staging+ : artifactory dédié signé par
    le Lead crypto avec les clés Luna.
 
-5. **Espace d'IDs à length=9 ≈ 16 millions** (extrapolation de la table doc
-   MOSIP : length=10 → 164M, ratio ~10×). Population Sénégal 2026 ≈ 18M
-   → **marge négative à l'horizon population complète**. Soit revoir le TOR
-   (length=10), soit accepter un risque d'épuisement à ~15 ans avec les
-   naissances + croissance démographique. Décision à remonter au comité de
-   pilotage.
+5. **[CLÔTURÉ ADR-R01 2026-05-25]** Risque d'origine : *espace d'IDs à length=9
+   ≈ 16 millions vs population Sénégal 2026 ≈ 19,4 M — marge négative*. La
+   décision Lead du 2026-05-25 a tranché en faveur de `length=10` (défaut
+   MOSIP, ~164 M IDs effectifs, marge ~4 générations sur 50 ans). L'avenant
+   TOR §4.1.3 est en cours de transmission au sponsor ANIU. Voir
+   `architecture/sprint-2/ADR-REFACTOR-v1.md` ADR-R01 et
+   `architecture/research/verhoeff/MOSIP-UIN-FEASIBILITY.md` pour le détail
+   du sampling Monte-Carlo qui a démontré l'impossibilité technique du 9 chiffres.
 
 6. **Schéma des `values` upstream non vérifié en intégral** pour artifactory
    et softhsm (réseau sandbox restreint). Les clés (`persistence.*`,
@@ -348,9 +354,4 @@ git push origin main
 - Doc MOSIP : <https://docs.mosip.io/1.2.0/>
 - Repos MOSIP : <https://github.com/mosip>
 - Helm charts MOSIP : <https://github.com/mosip/mosip-helm>
-- Config canonique : <https://github.com/mosip/mosip-config/blob/master/application-default.properties>
-- Global ConfigMap sample : <https://github.com/mosip/k8s-infra/blob/main/mosip/global_configmap.yaml.sample>
-- Artifactory ref impl : <https://github.com/mosip/artifactory-ref-impl>
-- SoftHSM install ref : <https://github.com/mosip/mosip-infra/blob/v1.2.0.2/deployment/v3/external/hsm/softhsm/README.md>
-- Mémoires liées : `[[project-iun-status]]`, `[[project-iun-approach-b]]`,
-  `[[powershell-encoding-utf8-bom]]`, `[[powershell-oc-quoting]]`
+- Co

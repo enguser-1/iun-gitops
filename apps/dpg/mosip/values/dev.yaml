@@ -67,29 +67,32 @@ postgres:
     keymanager: mosip_keymgr
     audit: mosip_audit
 
-# -- UIN generator : override Sénégal (TOR §4.1.2 / §4.1.3)
+# -- UIN generator : config Sénégal (TOR §4.1.2 / §4.1.3 — révisé ADR-R01 2026-05-25)
 # ATTENTION — Clés CANONIQUES validées contre
 # https://github.com/mosip/mosip-config/blob/master/application-default.properties
-# Défaut MOSIP : `mosip.kernel.uin.length=10`. TOR Sénégal impose 9.
+# Défaut MOSIP : `mosip.kernel.uin.length=10` — conservé suite à ADR-R01 2026-05-25.
 # Verhoeff n'est PAS configurable — codé en dur dans kernel-idgenerator-service.
-# Le check digit Verhoeff EST le dernier des 9 chiffres ; les 8 autres sont
-# aléatoires avec filtres anti-patterns évidents.
+# Le check digit Verhoeff EST le dernier des 10 chiffres ; les 9 autres sont
+# aléatoires avec filtres anti-patterns par défaut MOSIP.
 overrides:
-  # >>> CRITIQUE — longueur UIN ramenée de 10 à 9 (impose TOR §4.1.3)
-  mosip.kernel.uin.length: "9"
+  # >>> Longueur UIN = défaut MOSIP (ADR-R01 2026-05-25)
+  # L'ancien override 9 chiffres a été abandonné : démontré mathématiquement
+  # impossible (cf. research/verhoeff/MOSIP-UIN-FEASIBILITY.md, ~39 M max effectif
+  # vs besoin 100-130 M sur 50 ans). 10 chiffres = ~164 M IDs, marge ~4 générations.
+  mosip.kernel.uin.length: "10"
 
   # Pool de pré-génération réduit pour dev (default = 500000).
   mosip.kernel.uin.uins-to-generate: "1000"
   mosip.kernel.uin.min-unused-threshold: "100"
 
-  # ⚠ Filtres anti-patterns : MOSIP a calibré ces seuils pour length=10.
-  # À length=9, certains filtres deviennent trop agressifs. On relaxe
-  # reverse-digits-limit et digits-limit de 5 à 4. Voir README §Risques.
+  # Filtres anti-patterns : défaut MOSIP (length=10). Aucune dérogation.
+  # Les anciens overrides reverse-digits-limit=4 et digits-limit=4 (calibrés
+  # pour length=9 abandonné) sont remis à la valeur upstream 5.
   mosip.kernel.uin.length.sequence-limit:          "3"
   mosip.kernel.uin.length.repeating-block-limit:   "2"
   mosip.kernel.uin.length.repeating-limit:         "2"
-  mosip.kernel.uin.length.reverse-digits-limit:    "4"
-  mosip.kernel.uin.length.digits-limit:            "4"
+  mosip.kernel.uin.length.reverse-digits-limit:    "5"
+  mosip.kernel.uin.length.digits-limit:            "5"
   mosip.kernel.uin.length.conjugative-even-digits-limit: "3"
   mosip.kernel.uin.not-start-with:    "0,1"
   mosip.kernel.uin.restricted-numbers: "786,666"
@@ -164,13 +167,4 @@ probes:
     initialDelaySeconds: 60
     periodSeconds: 10
   liveness:
-    httpGet:
-      path: /actuator/health/liveness
-      port: 8090
-    initialDelaySeconds: 120
-    periodSeconds: 30
-
-# -- Persistence : pas de PVC nécessaire pour kernel-idgenerator (stateless).
-# Les pools d'UINs sont en DB. Postgres CNPG a son propre PVC (ODF).
-persistence:
-  enabled: false
+    htt

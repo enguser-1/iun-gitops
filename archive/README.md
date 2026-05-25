@@ -1,6 +1,13 @@
 # archive/ — Artefacts pré-pivot DPG (2026-05-24)
 
 > **Statut** : non utilisé. Conservé pour traçabilité uniquement.
+>
+> **NOTE 2026-05-25** : ce document conserve la mention historique d'un IUN
+> « 9 chiffres + Verhoeff » telle qu'elle figurait dans la TOR v2.0 au moment
+> du pivot DPG du 2026-05-24. Cette spécification a été révisée le 2026-05-25
+> par l'ADR-R01 (`architecture/sprint-2/ADR-REFACTOR-v1.md`) qui acte le format
+> définitif **10 chiffres** dont le 10ᵉ est un check digit Verhoeff. Le contenu
+> ci-dessous est conservé en l'état pour traçabilité du pivot.
 
 ## Contexte
 
@@ -37,12 +44,4 @@ du pivot stratégique et le plan 30 jours associé.
 - `bootstrap/` : l'instance Argo CD dédiée `iun-argocd` reste l'orchestrateur GitOps des 3 DPG. Aucun changement de scope.
 - `environments/{dev,staging,prod}/` : conserve la séparation par environnement, repointe désormais sur `apps/dpg/` (à mettre à jour).
 - `Bootstrap-IUN.ps1` / `Get-ArgoCD-Admin.ps1` / `Test-IUNCluster.ps1` / `IunOc.psm1` / `Test-OcWrapper.ps1` : scripts wrappers PowerShell — strictement réutilisés.
-- Module `IunOc.psm1` (`Invoke-Oc` / `Get-OcJson` / `Test-OcAccess`) : règle PS 5.1 quoting à maintenir (voir mémoire `[[powershell-oc-quoting]]`).
-
-## Pour creuser
-
-- Décisions de socle qui restent valides : voir TOR §5.4 (Service Mesh, Vault, AMQ Streams, RHBK, ODF, Compliance Operator, GitOps, Logging — confirmés à l'identique).
-- Chantiers techniques rendus obsolètes par le pivot : voir `CHANTIERS-OBSOLETES.md` à côté.
-
----
-*Pivot acté le 2026-05-24 par le Lead Platform Engineer + Architecte DPG.*
+- Module `IunOc.psm1` (`Invoke-Oc` / `Get-OcJson` 

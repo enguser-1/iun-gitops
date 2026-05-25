@@ -250,7 +250,7 @@ Content-Type: application/json
 ```json
 {
   "response": {
-    "uin": "SN-XXXX-XXXX-X",   // 9 chiffres + Verhoeff, format affichage cf. [[project-iun-status]]
+    "uin": "SN-XXXX-XXXX-XX",  // 10 chiffres + Verhoeff (ADR-R01 2026-05-25), format affichage cf. [[project-iun-status]]
     "status": "ACTIVATED"
   }
 }
@@ -328,4 +328,4 @@ Quand l'équipe IUN crée le repo réel `enguser-1/opencrvs-countryconfig-sn` :
 * **Départements** : <https://en.wikipedia.org/wiki/Departments_of_Senegal>
   (46 départements, dernier ajout Keur Massar mai 2021).
 * **Code de la famille SN** : Loi n°72-61 du 12 juin 1972 (révisions ultérieures
-  consolidées par le Ministère de la Justice).
+  consolidées par le Minis
