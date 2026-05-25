@@ -39,8 +39,15 @@ spec:
       labels:
         app.kubernetes.io/name: openimis
         app.kubernetes.io/component: opensearch-dashboards
+      annotations:
+        # opensearchproject/opensearch-dashboards:2.13.0 — image alignée avec
+        # opensearch:2.13.0 (USER 1000). Pas de PVC, donc pas de fsGroup.
+        openshift.io/required-scc: anyuid
     spec:
       serviceAccountName: openimis-sa
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
       containers:
         - name: dashboards
           image: opensearchproject/opensearch-dashboards:2.13.0
@@ -83,5 +90,6 @@ spec:
             capabilities:
               drop: ["ALL"]
             runAsNonRoot: true
+            runAsUser: 1000
             seccompProfile:
               type: RuntimeDefault

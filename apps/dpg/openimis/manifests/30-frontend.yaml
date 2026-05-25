@@ -48,6 +48,23 @@ spec:
       labels:
         app.kubernetes.io/name: openimis
         app.kubernetes.io/component: frontend
+      annotations:
+        # ============================================================
+        # DETTE TECHNIQUE — SCC anyuid + runAsUser:0
+        # ============================================================
+        # L'image openimis-fe:25.10 embarque un entrypoint NGINX qui
+        # réécrit /etc/nginx/conf.d/* et /etc/letsencrypt au démarrage
+        # (substitution des envvars OPENSEARCH_* dans le proxy_pass).
+        # Tourner en UID arbitraire (range namespace) -> EACCES sur ces
+        # paths car appartenant à root dans l'image.
+        # Solution pragmatique iter 1 : anyuid + UID 0.
+        # Iter 2 : refactor — soit ConfigMap pour la conf nginx + mount
+        # emptyDir, soit fork de l'image upstream avec /etc writable
+        # par UID 1001 (user nginx alpine).
+        # Refs : compose officiel ligne `command: nginx -g 'daemon off;'`
+        # + script start.sh dans openimis/openimis-fe repo.
+        # ============================================================
+        openshift.io/required-scc: anyuid
     spec:
       serviceAccountName: openimis-sa
       containers:
@@ -96,6 +113,9 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-            runAsNonRoot: true
+            runAsNonRoot: false
+            # runAsUser:0 + runAsNonRoot:false — voir bloc DETTE TECHNIQUE
+            # dans template.metadata.annotations.
+            runAsUser: 0
             seccompProfile:
               type: RuntimeDefault

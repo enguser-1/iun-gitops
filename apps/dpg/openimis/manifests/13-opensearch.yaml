@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # OpenSearch — moteur de recherche / dashboards reports OpenIMIS
 # ============================================================================
 # ⚠ OpenSearch sur OCP requiert vm.max_map_count >= 262144 (sysctl host).
@@ -49,8 +49,17 @@ spec:
       labels:
         app.kubernetes.io/name: openimis
         app.kubernetes.io/component: opensearch
+      annotations:
+        # opensearchproject/opensearch:2.13.0 exige UID 1000 strict — bootstrap
+        # (genèse keystore + ownership /usr/share/opensearch/data) échoue avec
+        # tout autre UID. anyuid obligatoire. fsGroup:1000 pour PVC Ceph.
+        openshift.io/required-scc: anyuid
     spec:
       serviceAccountName: openimis-sa
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: opensearch
           image: opensearchproject/opensearch:2.13.0
@@ -106,6 +115,7 @@ spec:
             capabilities:
               drop: ["ALL"]
             runAsNonRoot: true
+            runAsUser: 1000
             seccompProfile:
               type: RuntimeDefault
   volumeClaimTemplates:

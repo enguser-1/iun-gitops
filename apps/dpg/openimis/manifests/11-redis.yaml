@@ -41,8 +41,16 @@ spec:
       labels:
         app.kubernetes.io/name: openimis
         app.kubernetes.io/component: redis
+      annotations:
+        # redis:7-alpine déclare USER 999 (user `redis` standard) — restricted-v2
+        # refuse. anyuid pour accepter cet UID stable. Pas de PVC sur redis iter 1
+        # (Recreate strategy) -> pas de fsGroup nécessaire.
+        openshift.io/required-scc: anyuid
     spec:
       serviceAccountName: openimis-sa
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
       containers:
         - name: redis
           image: redis:7-alpine
@@ -84,5 +92,6 @@ spec:
             capabilities:
               drop: ["ALL"]
             runAsNonRoot: true
+            runAsUser: 999
             seccompProfile:
               type: RuntimeDefault

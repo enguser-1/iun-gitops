@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # RabbitMQ — broker AMQP pour Celery (worker async)
 # ============================================================================
 apiVersion: v1
@@ -44,8 +44,17 @@ spec:
       labels:
         app.kubernetes.io/name: openimis
         app.kubernetes.io/component: rabbitmq
+      annotations:
+        # rabbitmq:3.13-management déclare USER 999 (user `rabbitmq`). Erlang/epmd
+        # exige UID stable pour cohérence cookie + ownership /var/lib/rabbitmq.
+        # fsGroup:999 pour que CSI Ceph chown le PVC correctement.
+        openshift.io/required-scc: anyuid
     spec:
       serviceAccountName: openimis-sa
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
       containers:
         - name: rabbitmq
           image: rabbitmq:3.13-management
@@ -85,6 +94,7 @@ spec:
             capabilities:
               drop: ["ALL"]
             runAsNonRoot: true
+            runAsUser: 999
             seccompProfile:
               type: RuntimeDefault
   volumeClaimTemplates:

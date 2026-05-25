@@ -46,8 +46,19 @@ spec:
       labels:
         app.kubernetes.io/name: openimis
         app.kubernetes.io/component: postgres
+      annotations:
+        # Image openimis-pgsql:25.10 (custom upstream basée sur postgres officielle)
+        # déclare USER 999 — refusé par restricted-v2 (range UID namespace). On force
+        # anyuid pour accepter cet UID stable, requis par initdb/pg_ctl pour posséder
+        # /var/lib/postgresql/data. UID exact à reconfirmer par `oc debug image` —
+        # voir risques README §SCC.
+        openshift.io/required-scc: anyuid
     spec:
       serviceAccountName: openimis-sa
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
       containers:
         - name: postgres
           image: ghcr.io/openimis/openimis-pgsql:25.10
@@ -93,6 +104,7 @@ spec:
             capabilities:
               drop: ["ALL"]
             runAsNonRoot: true
+            runAsUser: 999
             seccompProfile:
               type: RuntimeDefault
   volumeClaimTemplates:

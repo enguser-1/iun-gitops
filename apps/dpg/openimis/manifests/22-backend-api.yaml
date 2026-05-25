@@ -44,8 +44,16 @@ spec:
       labels:
         app.kubernetes.io/name: openimis
         app.kubernetes.io/component: backend
+      annotations:
+        # openimis-be:25.10 = USER 1000. anyuid pour passer restricted-v2.
+        # fsGroup:1000 -> PVC photos accessible en écriture.
+        openshift.io/required-scc: anyuid
     spec:
       serviceAccountName: openimis-sa
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: backend
           image: ghcr.io/openimis/openimis-be:25.10
@@ -103,6 +111,7 @@ spec:
             capabilities:
               drop: ["ALL"]
             runAsNonRoot: true
+            runAsUser: 1000
             seccompProfile:
               type: RuntimeDefault
       volumes:

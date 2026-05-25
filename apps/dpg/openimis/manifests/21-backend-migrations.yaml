@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # Job migrations — équivalent du service compose `migrations` (command: init)
 # ============================================================================
 # Tourne UNE FOIS au premier déploiement (et à chaque bump majeur de release
@@ -24,9 +24,18 @@ spec:
       labels:
         app.kubernetes.io/name: openimis
         app.kubernetes.io/component: backend-migrations
+      annotations:
+        # ghcr.io/openimis/openimis-be:25.10 déclare USER 1000 — image Python
+        # OpenIMIS. anyuid pour passer SCC restricted-v2. fsGroup:1000 pour
+        # /openimis-be/openIMIS/images/insurees mounté via PVC photos.
+        openshift.io/required-scc: anyuid
     spec:
       serviceAccountName: openimis-sa
       restartPolicy: OnFailure
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       initContainers:
         - name: wait-for-db
           image: ghcr.io/openimis/openimis-pgsql:25.10
@@ -51,6 +60,8 @@ spec:
             capabilities:
               drop: ["ALL"]
             runAsNonRoot: true
+            # Pas de runAsUser explicite — hérite pod-level (1000). pg_isready
+            # est un binaire standalone, fonctionne sous n'importe quel UID.
             seccompProfile:
               type: RuntimeDefault
       containers:
@@ -79,5 +90,6 @@ spec:
             capabilities:
               drop: ["ALL"]
             runAsNonRoot: true
+            runAsUser: 1000
             seccompProfile:
               type: RuntimeDefault
