@@ -62,8 +62,6 @@ spec:
             runAsNonRoot: true
             # Pas de runAsUser explicite — hérite pod-level (1000). pg_isready
             # est un binaire standalone, fonctionne sous n'importe quel UID.
-            seccompProfile:
-              type: RuntimeDefault
       containers:
         - name: migrations
           image: ghcr.io/openimis/openimis-be:25.10
@@ -91,5 +89,3 @@ spec:
               drop: ["ALL"]
             runAsNonRoot: true
             runAsUser: 1000
-            seccompProfile:
-              type: RuntimeDefault

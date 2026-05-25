@@ -117,5 +117,3 @@ spec:
             # runAsUser:0 + runAsNonRoot:false — voir bloc DETTE TECHNIQUE
             # dans template.metadata.annotations.
             runAsUser: 0
-            seccompProfile:
-              type: RuntimeDefault
