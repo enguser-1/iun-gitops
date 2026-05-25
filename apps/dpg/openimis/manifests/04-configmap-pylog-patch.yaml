@@ -1,0 +1,22 @@
+﻿apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openimis-pylog-patch
+  namespace: openimis-dev
+data:
+  sitecustomize.py: |
+    """OpenShift compat: neutralise db-queries/server FileHandlers."""
+    import logging.config as _lc
+    import sys
+    _orig = _lc.dictConfig
+    def _patched(config):
+        try:
+            h = config.get('handlers', {}) if isinstance(config, dict) else {}
+            for name in ('db-queries', 'server'):
+                if name in h:
+                    h[name] = {'class': 'logging.NullHandler'}
+        except Exception as e:
+            print(f'[sitecustomize] patch error: {e}', file=sys.stderr)
+        return _orig(config)
+    _lc.dictConfig = _patched
+    print('[sitecustomize] OpenIMIS LOGGING handlers neutralized: db-queries, server', file=sys.stderr)

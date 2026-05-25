@@ -23,6 +23,7 @@ resources:
   - 01-secrets-dev.yaml
   - 02-configmap-app.yaml
   - 03-configmap-openimis-sn.yaml
+  - 04-configmap-pylog-patch.yaml
   - 10-postgres.yaml
   - 11-redis.yaml
   - 12-rabbitmq.yaml
