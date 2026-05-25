@@ -1,10 +1,4 @@
-﻿# ============================================================================
-# Frontend React + NGINX — compose service `frontend`
-# ============================================================================
-# Le compose officiel branche le FE sur ports 80/443 et fait proxy `/api` vers
-# le backend via NGINX. Sur OCP, on supprime l'écoute HTTPS interne (TLS
-# délégué à la Route OCP) et on garde uniquement 8080 (port non-privilégié).
-# ============================================================================
+﻿# Frontend NGINX + React — fix CAP_CHOWN + nodeSelector compute03
 apiVersion: v1
 kind: Service
 metadata:
@@ -35,10 +29,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: openimis
@@ -49,24 +40,11 @@ spec:
         app.kubernetes.io/name: openimis
         app.kubernetes.io/component: frontend
       annotations:
-        # ============================================================
-        # DETTE TECHNIQUE — SCC anyuid + runAsUser:0
-        # ============================================================
-        # L'image openimis-fe:25.10 embarque un entrypoint NGINX qui
-        # réécrit /etc/nginx/conf.d/* et /etc/letsencrypt au démarrage
-        # (substitution des envvars OPENSEARCH_* dans le proxy_pass).
-        # Tourner en UID arbitraire (range namespace) -> EACCES sur ces
-        # paths car appartenant à root dans l'image.
-        # Solution pragmatique iter 1 : anyuid + UID 0.
-        # Iter 2 : refactor — soit ConfigMap pour la conf nginx + mount
-        # emptyDir, soit fork de l'image upstream avec /etc writable
-        # par UID 1001 (user nginx alpine).
-        # Refs : compose officiel ligne `command: nginx -g 'daemon off;'`
-        # + script start.sh dans openimis/openimis-fe repo.
-        # ============================================================
         openshift.io/required-scc: anyuid
     spec:
       serviceAccountName: openimis-sa
+      nodeSelector:
+        kubernetes.io/hostname: compute03
       containers:
         - name: frontend
           image: ghcr.io/openimis/openimis-fe:25.10
@@ -83,23 +61,16 @@ spec:
                 secretKeyRef:
                   name: openimis-opensearch
                   key: OPENSEARCH_BASIC_TOKEN
-            # L'image FE écoute sur 80 par défaut — surcharge pour OCP (port < 1024
-            # interdit en restricted-v2). Si la conf NGINX embarquée refuse de
-            # binder sur 8080, escalader vers SCC `nonroot-v2` (root group 0 OK).
             - name: NGINX_PORT
               value: "8080"
           readinessProbe:
-            httpGet:
-              path: /
-              port: 8080
+            tcpSocket: { port: 8080 }
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 5
           livenessProbe:
-            httpGet:
-              path: /
-              port: 8080
+            tcpSocket: { port: 8080 }
             initialDelaySeconds: 30
             periodSeconds: 30
           resources:
@@ -113,7 +84,6 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+              add: ["CHOWN", "FOWNER", "SETUID", "SETGID", "DAC_OVERRIDE"]
             runAsNonRoot: false
-            # runAsUser:0 + runAsNonRoot:false — voir bloc DETTE TECHNIQUE
-            # dans template.metadata.annotations.
             runAsUser: 0
