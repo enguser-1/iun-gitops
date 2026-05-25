@@ -65,14 +65,14 @@ spec:
           # Worker Celery — pas d'endpoint HTTP, on probe le process Python
           readinessProbe:
             exec:
-              args: ["sh", "-c", "celery -A openIMIS inspect ping -d celery@$HOSTNAME 2>/dev/null || pgrep -f celery"]
+              command: ["sh", "-c", "celery -A openIMIS inspect ping -d celery@$HOSTNAME 2>/dev/null || pgrep -f celery"]
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 5
           livenessProbe:
             exec:
-              args: ["sh", "-c", "pgrep -f celery"]
+              command: ["sh", "-c", "pgrep -f celery"]
             initialDelaySeconds: 60
             periodSeconds: 60
             timeoutSeconds: 10

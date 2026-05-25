@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # Job migrations — équivalent du service compose `migrations` (command: init)
 # ============================================================================
 # Tourne UNE FOIS au premier déploiement (et à chaque bump majeur de release

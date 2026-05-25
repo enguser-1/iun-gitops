@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # ConfigMap générique OpenIMIS — variables d'env partagées backend + worker + FE
 # ============================================================================
 # Mappe les variables `.env` du docker-compose officiel openimis-dist_dkr
