@@ -1,0 +1,213 @@
+# ============================================================================
+# Countryconfig REEL (farajaland v1.9.13) - remplace le mock nginx
+# ============================================================================
+# Contexte (2026-06-12) : le mock nginx servait des /forms a sections vides
+# -> crash client "Cannot read properties of undefined (reading 'id')" sur
+# toute nouvelle declaration. Le vrai serveur farajaland fournit /forms,
+# /roles, /workqueue, /certificates, /handlebars, traductions, etc.
+#
+# Pieges geres ici (cf. analyse opencrvs-countryconfig v1.9.0) :
+#  1. start-prod.sh fait `sed -i` sur src/*-config.prod.js -> EACCES sous
+#     OpenShift (UID arbitraire). FIX : command override `yarn start:prod`
+#     (bypass des sed) + nos deux fichiers config montes via ConfigMap subPath.
+#  2. client-config.prod.js upstream hardcode un schema de sous-domaines
+#     (gateway.{domain}, login.{domain}...) incompatible avec nos Routes.
+#     FIX : meme ConfigMap - contenu = config live validee E2E le 12/06
+#     (V2_EVENTS: false DANS FEATURES - boucle redirectToWorkqueue).
+#  3. ANALYTICS_DATABASE_URL (PostgreSQL) OBLIGATOIRE en prod : sync
+#     location_levels/statistics au boot. Secret countryconfig-analytics-db
+#     a creer depuis les creds postgres-events (cf. Run-CountryconfigReal.ps1).
+#  4. Boot : fetch ${AUTH_URL}/.well-known (JWT pubkey) -> auth doit etre up.
+#
+# Bascule : le Service `countryconfig` (selector name=countryconfig) reste
+# sur le mock. Validation de countryconfig-real via curls internes, puis :
+#   oc -n iun-opencrvs-dev patch svc countryconfig -p
+#     '{"spec":{"selector":{"app.kubernetes.io/name":"countryconfig-real"}}}'
+# Rollback : re-patcher selector vers name=countryconfig.
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: countryconfig-prod-overrides
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: countryconfig-real
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: opencrvs
+  annotations:
+    iun.sn/purpose: "window.config client+login - remplace les *.prod.js upstream (sous-domaines hardcodes)"
+data:
+  client-config.prod.js: |
+    window.config = {
+      API_GATEWAY_URL: "https://iun-civil-api-dev.apps.origins.heritage.africa/",
+      CONFIG_API_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig",
+      AUTH_API_URL: "https://iun-civil-auth-dev.apps.origins.heritage.africa/",
+      COUNTRY: "SN",
+      LANGUAGES: "fr,wo",
+      CLIENT_APP_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/",
+      COUNTRY_LOGO: { url: "", fileName: "" },
+      BIRTH: { REGISTRATION_TARGET: 365, LATE_REGISTRATION_TARGET: 1825, FEE: { ON_TIME: 0, LATE: 1000, DELAYED: 2000 } },
+      DEATH: { REGISTRATION_TARGET: 30, LATE_REGISTRATION_TARGET: 365, FEE: { ON_TIME: 0, LATE: 500, DELAYED: 1000 } },
+      MARRIAGE: { REGISTRATION_TARGET: 30, FEE: { ON_TIME: 5, DELAYED: 15 } },
+      CURRENCY: { isoCode: "XOF", languagesAndCountry: ["fr-SN"] },
+      PHONE_NUMBER_PATTERN: "^7[05678][0-9]{7}",
+      NID_NUMBER_PATTERN: "^[0-9]{10}",
+      FEATURES: {
+        DEATH_REGISTRATION: true,
+        MARRIAGE_REGISTRATION: true,
+        EXTERNAL_VALIDATION_WORKFLOW: false,
+        INFORMANT_SIGNATURE: false,
+        INFORMANT_SIGNATURE_REQUIRED: false,
+        PRINT_DECLARATION: true,
+        V2_EVENTS: false
+      },
+      USER_NOTIFICATION_DELIVERY_METHOD: "sms",
+      INFORMANT_NOTIFICATION_DELIVERY_METHOD: "sms",
+      SENTRY: "",
+      LOGROCKET: "",
+      ADMIN_LEVELS: 2,
+      APPLICATION_NAME: "IUN Senegal MVP",
+      LOGIN_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa",
+      DESKTOP_TIME_OUT_MILLISECONDS: 900000,
+      CONNECTION_TIMEOUT: 60000,
+      COUNTRY_CONFIG_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig",
+      MINIO_URL: "https://iun-civil-docs-dev.apps.origins.heritage.africa/ocrvs/",
+      MINIO_BASE_URL: "https://iun-civil-docs-dev.apps.origins.heritage.africa",
+      MINIO_BUCKET: "ocrvs",
+      DASHBOARDS: []
+    };
+  login-config.prod.js: |
+    window.config = {
+      AUTH_API_URL: "https://iun-civil-auth-dev.apps.origins.heritage.africa/",
+      CONFIG_API_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/api/countryconfig",
+      COUNTRY: "SN",
+      LANGUAGES: "fr,wo",
+      CLIENT_APP_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/",
+      APPLICATION_NAME: "IUN Senegal MVP",
+      COUNTRY_CONFIG_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/api/countryconfig",
+      PHONE_NUMBER_PATTERN: "^7[05678][0-9]{7}",
+      SENTRY: "",
+      LOGROCKET: ""
+    };
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: countryconfig-real
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: countryconfig-real
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: opencrvs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: countryconfig-real
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: countryconfig-real
+        app.kubernetes.io/part-of: iun-platform
+    spec:
+      containers:
+        - name: countryconfig
+          image: docker.io/opencrvs/ocrvs-countryconfig:v1.9.13
+          # Bypass start-prod.sh : les sed -i echouent sous UID arbitraire
+          # OpenShift, et nos config.prod.js sont montes en ConfigMap.
+          command: ["/bin/sh", "-c", "exec yarn start:prod"]
+          ports:
+            - name: http
+              containerPort: 3040
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: COUNTRY_CONFIG_HOST
+              value: "0.0.0.0"
+            - name: COUNTRY_CONFIG_PORT
+              value: "3040"
+            # DOMAIN='*' = CORS ouvert (mode dev upstream). Les origins reels
+            # passent par les proxys nginx client/login de toute facon.
+            - name: DOMAIN
+              value: "*"
+            - name: GATEWAY_URL
+              value: "http://gateway:7070"
+            - name: AUTH_URL
+              value: "http://auth:4040"
+            - name: FHIR_URL
+              value: "http://hearth:3447/fhir"
+            - name: APPLICATION_CONFIG_URL
+              value: "http://config:2021"
+            - name: CONFIRM_REGISTRATION_URL
+              value: "http://workflow:5050/confirm/registration"
+            - name: LOGIN_URL
+              value: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/"
+            - name: CLIENT_APP_URL
+              value: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/"
+            - name: COUNTRY_CONFIG_URL
+              value: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig"
+            - name: CHECK_INVALID_TOKEN
+              value: "true"
+            - name: QA_ENV
+              value: "false"
+            - name: ANALYTICS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: countryconfig-analytics-db
+                  key: url
+          volumeMounts:
+            - name: prod-overrides
+              mountPath: /usr/src/app/src/client-config.prod.js
+              subPath: client-config.prod.js
+              readOnly: true
+            - name: prod-overrides
+              mountPath: /usr/src/app/src/login-config.prod.js
+              subPath: login-config.prod.js
+              readOnly: true
+          # Boot lent : ts-node transpile + sync analytics Postgres + fetch
+          # .well-known auth. startupProbe genereuse avant liveness.
+          startupProbe:
+            httpGet:
+              path: /ping
+              port: 3040
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 3040
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 3040
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+      volumes:
+        - name: prod-overrides
+          configMap:
+            name: countryconfig-prod-overrides
+---
+# Service de validation (avant bascule du Service principal `countryconfig`)
+apiVersion: v1
+kind: Service
+metadata:
+  name: countryconfig-real
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: countryconfig-real
+    app.kubernetes.io/part-of: iun-platform
+spec:
+  selector:
+    app.kubernetes.io/name: countryconfig-real
+  ports:
+    - name: http
+      port: 3040
+      targetPort: 3040
