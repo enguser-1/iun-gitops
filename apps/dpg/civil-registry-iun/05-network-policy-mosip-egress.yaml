@@ -1,0 +1,115 @@
+# ============================================================================
+# NetworkPolicies pour iun-civil-registry
+# ============================================================================
+# 1. allow-egress-civil-to-mosip-uin
+#    Cross-NS egress vers iun-mosip-dev :: iun-uin-service:8080 (REST call
+#    pour mint UIN). Selecteur strict cote dst = label
+#    app.kubernetes.io/name=iun-uin-service.
+#
+# 2. allow-egress-https-builds
+#    Permettre aux build pods OCP (label openshift.io/build.name) de tirer
+#    les images base depuis docker.io / quay.io et internal registry.
+#    Necessaire car deny-all-egress de Week 1 bloque tout par defaut.
+# ============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-civil-to-mosip-uin
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: civil-registry-custom
+  annotations:
+    iun.sn/purpose: "iun-civil-registry can call iun-uin-service across namespaces"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: iun-civil-registry
+  policyTypes:
+    - Egress
+  egress:
+    # iun-uin-service in iun-mosip-dev, port 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: iun-mosip-dev
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: iun-uin-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    # DNS OCP (required to resolve iun-uin-service.iun-mosip-dev.svc.cluster.local)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - protocol: UDP
+          port: 5353
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-https-builds
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: civil-registry-custom
+  annotations:
+    iun.sn/purpose: "OCP build pods : pull base images + push to internal registry"
+spec:
+  podSelector:
+    matchExpressions:
+      - key: openshift.io/build.name
+        operator: Exists
+  policyTypes:
+    - Egress
+  egress:
+    # HTTPS WAN (registry.access.redhat.com, docker.io fallback)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # DNS OCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - protocol: UDP
+          port: 5353
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Internal OCP image registry (push the built image to ImageStream)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-image-registry
+      ports:
+        - protocol: TCP
+          port: 5000
+    # Ceph RGW backend du registry interne (ODF external). Le registry
+    # redirige les GET blobs vers une URL S3 pre-signee http://10.21.0.14:8080
+    # -> le build pod doit joindre le RGW directement.
+    # Fix 2026-06-12 : root cause PullBuilderImageFailed (i/o timeout RGW),
+    # builds iun-uin-service-3/-6. Le 10.0.0.0/8 est exclu de la regle 443
+    # et le port 8080 n'etait ouvert nulle part.
+    - to:
+        - ipBlock:
+            cidr: 10.21.0.14/32
+      ports:
+        - protocol: TCP
+          port: 8080

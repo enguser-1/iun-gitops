@@ -1,0 +1,73 @@
+# ============================================================================
+# NetworkPolicy egress HTTPS pour OCP build pods
+# ============================================================================
+# Le socle deny-all-egress (Sprint 2) bloque toute sortie WAN. Les pods de
+# build OCP sont selectionnes par le label `openshift.io/build.name` (injecte
+# automatiquement par OpenShift sur tout build pod). Cette NP autorise leur
+# egress HTTPS pour pull les images base (python:3.12-slim depuis docker.io
+# library) + DNS resolution.
+#
+# Necessaire pour le pattern BuildConfig binary docker strategy qui clone
+# pas mais pull seulement la base image.
+# ============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-https-builds
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: uin-custom
+  annotations:
+    iun.sn/purpose: "OCP builds : pull base images from docker.io etc."
+spec:
+  podSelector:
+    matchExpressions:
+      - key: openshift.io/build.name
+        operator: Exists
+  policyTypes:
+    - Egress
+  egress:
+    # HTTPS WAN (docker.io, quay.io, registry.redhat.io)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # DNS OCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - protocol: UDP
+          port: 5353
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Internal OCP image registry (push final image + pull base from openshift IS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-image-registry
+      ports:
+        - protocol: TCP
+          port: 5000
+    # Ceph RGW backend du registry interne (ODF external). Le registry
+    # redirige les GET blobs vers une URL S3 pre-signee http://10.21.0.14:8080
+    # -> le build pod doit joindre le RGW directement.
+    # Fix 2026-06-12 : root cause PullBuilderImageFailed (i/o timeout RGW),
+    # builds iun-uin-service-3/-6. Le 10.0.0.0/8 est exclu de la regle 443
+    # et le port 8080 n'etait ouvert nulle part.
+    - to:
+        - ipBlock:
+            cidr: 10.21.0.14/32
+      ports:
+        - protocol: TCP
+          port: 8080

@@ -22,7 +22,7 @@ Cible : OpenShift Container Platform 4.16.29, cluster partagé `https://api.orig
 | DPG       | Rôle TOR                                  | Namespace cible    | Source officielle                                | Version visée |
 |-----------|-------------------------------------------|--------------------|--------------------------------------------------|---------------|
 | **OpenCRVS** | État civil (TOR §3.2 C1, §4.2)         | `opencrvs-{env}`   | `github.com/opencrvs/infrastructure` (Helm)      | **v1.9.12**   |
-| **MOSIP**    | Génération IUN 10 chiffres + Verhoeff + ID Auth (ADR-R01 2026-05-25 ; TOR §3.2 C2, §4.1, §4.3) | `mosip-{env}`      | `mosip.github.io/mosip-helm` (V3 deployment)     | **1.2.1.0** LTS |
+| **MOSIP**    | Génération IUN 9 chiffres + Verhoeff + ID Auth (TOR §3.2 C2, §4.1, §4.3) | `mosip-{env}`      | `mosip.github.io/mosip-helm` (V3 deployment)     | **1.2.1.0** LTS |
 | **OpenIMIS** | Protection sociale CMU/PNBSF/IPRES/CSS (TOR §3.2 C3, §4.4) | `openimis-{env}`   | `github.com/openimis/openimis-dist_dkr` (**docker-compose — pas de Helm officiel**) | latest |
 
 > ⚠ **OpenIMIS** n'a pas de Helm chart officiel — voir `apps/dpg/openimis/README.md`
@@ -116,7 +116,7 @@ gitops/
 │   │   │   ├── values/{dev,staging,prod}.yaml
 │   │   │   └── manifests/
 │   │   │       ├── namespace.yaml      Namespace mosip-dev
-│   │   │       └── configmap-iun-format.yaml  IUN 10 chiffres + Verhoeff (ADR-R01 2026-05-25, TOR §4.1.4)
+│   │   │       └── configmap-iun-format.yaml  IUN 9 chiffres + Verhoeff (TOR §4.1.4)
 │   │   ├── opencrvs/                   OpenCRVS (état civil + PWA hors-ligne wo/ff)
 │   │   │   ├── application.yaml
 │   │   │   ├── kustomization.yaml
@@ -316,4 +316,4 @@ Invoke-Oc delete namespace iun-gitops
 
 ---
 
-*Dernière r�
+*Dernière révision : 2026-05-24 — pivot DPG acté.*
