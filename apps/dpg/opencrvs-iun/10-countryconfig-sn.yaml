@@ -1,0 +1,109 @@
+apiVersion: v1
+data:
+  default.conf: |-
+    server {   listen 3040;   server_name _;   default_type application/json;   gzip on;    location = /ping { return 200 'OK'; }   location = /publicConfig { return 200 '{"config":{"APPLICATION_NAME":"IUN Senegal MVP","BIRTH":{"REGISTRATION_TARGET":365,"LATE_REGISTRATION_TARGET":1825,"FEE":{"ON_TIME":0,"LATE":1000,"DELAYED":2000}},"DEATH":{"REGISTRATION_TARGET":30,"LATE_REGISTRATION_TARGET":365,"FEE":{"ON_TIME":0,"LATE":500,"DELAYED":1000}},"MARRIAGE":{"REGISTRATION_TARGET":30,"FEE":{"ON_TIME":5,"DELAYED":15}},"COUNTRY":"SN","COUNTRY_LOGO":{"url":"","fileName":""},"CURRENCY":{"isoCode":"XOF","languagesAndCountry":["fr-SN"]},"LANGUAGES":"fr,wo","PHONE_NUMBER_PATTERN":"^7[05678][0-9]{7}","NID_NUMBER_PATTERN":"^[0-9]{10}","INFORMANT_SIGNATURE":true,"INFORMANT_SIGNATURE_REQUIRED":false,"USER_NOTIFICATION_DELIVERY_METHOD":"sms","INFORMANT_NOTIFICATION_DELIVERY_METHOD":"sms","FEATURES":{"DEATH_REGISTRATION":true,"MARRIAGE_REGISTRATION":true,"EXTERNAL_VALIDATION_WORKFLOW":false,"PRINT_DECLARATION":true},"DATE_OF_BIRTH_UNKNOWN":false,"ADDRESSES":1,"ADMIN_LEVELS":2,"HIDE_EVENT_REGISTER_INFORMATION":false,"EXTERNAL_VALIDATION_WORKFLOW":false,"INTEGRATIONS":[]}}'; }   location = /config { return 200 '{"config":{"APPLICATION_NAME":"IUN Senegal MVP","BIRTH":{"REGISTRATION_TARGET":30,"LATE_REGISTRATION_TARGET":365,"PRINT_IN_ADVANCE":true,"FEE":{"ON_TIME":0,"LATE":1000,"DELAYED":2000}},"DEATH":{"REGISTRATION_TARGET":30,"PRINT_IN_ADVANCE":true,"FEE":{"ON_TIME":0,"LATE":500,"DELAYED":1000}},"MARRIAGE":{"REGISTRATION_TARGET":30,"PRINT_IN_ADVANCE":true,"FEE":{"ON_TIME":5,"DELAYED":15}},"ADMIN_STRUCTURE":[],"COUNTRY":"SN","COUNTRY_LOGO":{"url":"","fileName":"logo.png","file":""},"CURRENCY":{"isoCode":"XOF","languagesAndCountry":["fr-SN"]},"LANGUAGES":"fr,wo","PHONE_NUMBER_PATTERN":"^7","NID_NUMBER_PATTERN":"^0","FEATURES":{"DEATH_REGISTRATION":true,"MARRIAGE_REGISTRATION":false,"EXTERNAL_VALIDATION_WORKQUEUE":false,"PRINT_DECLARATION":false,"DATE_OF_BIRTH_UNKNOWN":false,"V2_EVENTS":false},"FIELD_AGENT_AUDIT_LOCATIONS":"DISTRICT","DECLARATION_AUDIT_LOCATIONS":"DISTRICT","LOGIN_BACKGROUND":{"backgroundColor":"36304E"},"USER_NOTIFICATION_DELIVERY_METHOD":"sms","INFORMANT_NOTIFICATION_DELIVERY_METHOD":"sms","INFORMANT_SIGNATURE":false,"INFORMANT_SIGNATURE_REQUIRED":false,"ADDRESSES":1,"ADMIN_LEVELS":2,"HIDE_EVENT_REGISTER_INFORMATION":false,"INTEGRATIONS":[]},"certificates":[],"systems":[]}'; }     location = /login-config.js {     default_type application/javascript;     return 200 'window.config = { AUTH_API_URL: "https://iun-civil-auth-dev.apps.origins.heritage.africa/", CONFIG_API_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/api/countryconfig", COUNTRY: "SN", LANGUAGES: "fr,wo", CLIENT_APP_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/", APPLICATION_NAME: "IUN Senegal MVP", COUNTRY_CONFIG_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/api/countryconfig", PHONE_NUMBER_PATTERN: "^7[05678][0-9]{7}", SENTRY: "", LOGROCKET: "" };';   }    location = /client-config.js {     default_type application/javascript;     return 200 'window.config = { API_GATEWAY_URL: "https://iun-civil-api-dev.apps.origins.heritage.africa/", CONFIG_API_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig", AUTH_API_URL: "https://iun-civil-auth-dev.apps.origins.heritage.africa/", COUNTRY: "SN", LANGUAGES: "fr,wo", CLIENT_APP_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/", COUNTRY_LOGO: { url: "", fileName: "" }, BIRTH: { REGISTRATION_TARGET: 365, LATE_REGISTRATION_TARGET: 1825, FEE: { ON_TIME: 0, LATE: 1000, DELAYED: 2000 } }, DEATH: { REGISTRATION_TARGET: 30, LATE_REGISTRATION_TARGET: 365, FEE: { ON_TIME: 0, LATE: 500, DELAYED: 1000 } }, MARRIAGE: { REGISTRATION_TARGET: 30, FEE: { ON_TIME: 5, DELAYED: 15 } }, CURRENCY: { isoCode: "XOF", languagesAndCountry: ["fr-SN"] }, PHONE_NUMBER_PATTERN: "^7[05678][0-9]{7}", NID_NUMBER_PATTERN: "^[0-9]{10}", FEATURES: { DEATH_REGISTRATION: true, MARRIAGE_REGISTRATION: true, EXTERNAL_VALIDATION_WORKFLOW: false, INFORMANT_SIGNATURE: false, INFORMANT_SIGNATURE_REQUIRED: false, PRINT_DECLARATION: true, V2_EVENTS: false }, USER_NOTIFICATION_DELIVERY_METHOD: "sms", INFORMANT_NOTIFICATION_DELIVERY_METHOD: "sms", SENTRY: "", LOGROCKET: "", ADMIN_LEVELS: 2, APPLICATION_NAME: "IUN Senegal MVP", LOGIN_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa", DESKTOP_TIME_OUT_MILLISECONDS: 900000, CONNECTION_TIMEOUT: 60000, COUNTRY_CONFIG_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig", DASHBOARDS: [] };';   }    location = /content { return 200 '{"languages":["fr","wo"],"messages":{"fr":{"app.title":"IUN Senegal"},"wo":{"app.title":"IUN Senegal"}}}'; }   location = /application-config { return 200 '{"APPLICATION_NAME":"IUN Senegal MVP","BIRTH":{"REGISTRATION_TARGET":365,"LATE_REGISTRATION_TARGET":1825,"FEE":{"ON_TIME":0,"LATE":1000,"DELAYED":2000}},"DEATH":{"REGISTRATION_TARGET":30,"LATE_REGISTRATION_TARGET":365,"FEE":{"ON_TIME":0,"LATE":500,"DELAYED":1000}},"COUNTRY":"SN","COUNTRY_LOGO":"","CURRENCY":{"isoCode":"XOF","languagesAndCountry":["fr-SN"]},"LANGUAGES":"fr,wo","PHONE_NUMBER_PATTERN":"^7[05678][0-9]{7}","NID_NUMBER_PATTERN":"^[0-9]{10}","INFORMANT_SIGNATURE":true,"INFORMANT_SIGNATURE_REQUIRED":false}'; }    location = /locations { return 200 '{"locations":[]}'; }   location = /facilities { return 200 '{"facilities":[]}'; }   location = /events { return 200 '[]'; }   location = /roles { return 200 '[{"id":"FIELD_AGENT","label":{"defaultMessage":"Field Agent","description":"Name for user role Field Agent","id":"userRole.fieldAgent"},"scopes":["record.create[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.declare-birth","record.declare-death","record.declare-marriage","record.submit-incomplete","record.submit-for-review","search.birth:my-jurisdiction","search.death:my-jurisdiction","search.marriage:my-jurisdiction"]},{"id":"REGISTRATION_AGENT","label":{"defaultMessage":"Registration Agent","description":"Name for user role Registration Agent","id":"userRole.registrationAgent"},"scopes":["record.create[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.declare-birth","record.declare-death","record.declare-marriage","record.submit-for-approval","record.submit-for-updates","record.declaration-archive","record.declaration-reinstate","record.registration-request-correction","record.print-issue-certified-copies","performance.read","performance.read-dashboards","organisation.read-locations:all","organisation.read-locations:my-office","search.birth","search.death","search.marriage"]},{"id":"LOCAL_REGISTRAR","label":{"defaultMessage":"Local Registrar","description":"Name for user role Local Registrar","id":"userRole.localRegistrar"},"scopes":["record.create[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.declare-birth","record.declare-death","record.declare-marriage","record.submit-for-updates","record.review-duplicates","record.declared.review-duplicates[event=birth|death|tennis-club-membership]","record.declaration-archive","record.declaration-reinstate","record.register","record.registration-correct","record.print-issue-certified-copies","performance.read","performance.read-dashboards","organisation.read-locations:all","profile.electronic-signature","organisation.read-locations:my-office","search.birth","search.death","search.marriage"]},{"id":"LOCAL_SYSTEM_ADMIN","label":{"defaultMessage":"Local System Admin","description":"Name for user role Local System Admin","id":"userRole.localSystemAdmin"},"scopes":["user.read:my-office","user.create:my-jurisdiction","user.update:my-jurisdiction","organisation.read-locations:all","performance.read","performance.read-dashboards","performance.vital-statistics-export"]},{"id":"NATIONAL_SYSTEM_ADMIN","label":{"defaultMessage":"National System Admin","description":"Name for user role National System Admin","id":"userRole.nationalSystemAdmin"},"scopes":["user.create:all","user.read:all","user.update:all","organisation.read-locations:all","performance.read","performance.read-dashboards","performance.vital-statistics-export"]},{"id":"PERFORMANCE_MANAGER","label":{"defaultMessage":"Performance Manager","description":"Name for user role Performance Manager","id":"userRole.performanceManager"},"scopes":["performance.read","performance.read-dashboards","performance.vital-statistics-export"]}]'; }   location = /handlebars { return 200 '{}'; }   location = /admin-structure { return 200 '{"locations":[],"facilities":[]}'; }   location = /notification { return 200 '{"status":"queued","provider":"mock-sms"}'; }    location /trigger/ { return 200 '{"status":"ok","mock":true}'; }   location /events/  { return 200 '{"status":"ok","mock":true}'; }   location = /forms { return 200 '{"version":"0.0.1","birth":{"sections":[]},"death":{"sections":[]},"marriage":{"sections":[]}}'; }   location /forms/ { return 200 '{"version":"0.0.1","birth":{"sections":[]},"death":{"sections":[]},"marriage":{"sections":[]}}'; }    location /static/ {     default_type image/svg+xml;     return 200 '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';   }   location = /static/manifest.json {     default_type application/manifest+json;     return 200 '{"short_name":"IUN","name":"IUN Senegal","start_url":"/","display":"standalone","theme_color":"#4c68c1","background_color":"#f5f5f5","icons":[]}';   }     location = /validators.js {     default_type application/javascript;     return 200 'export const validators = {}; export default {};';   }    location = /conditionals.js {     default_type application/javascript;     return 200 'export const conditionals = {}; export default {};';   }    location = /handlebars.js {     default_type application/javascript;     return 200 'export default {};';   }    location = /content/client {     return 200 '{"languages":[{"lang":"fr","displayName":"Francais","messages":{"app.title":"IUN Senegal"}},{"lang":"wo","displayName":"Wolof","messages":{"app.title":"IUN Senegal"}}]}';   }   location = /content/login { return 200 '{"languages":[{"lang":"fr","displayName":"Francais","messages":{"app.title":"IUN Senegal","login.username":"Nom utilisateur","login.password":"Mot de passe","login.submit":"Connexion"}}]}'; }     location ~ "^/workqueue\.config" { default_type application/json; return 200 '[{"result":{"data":{"json":[{\"id\":\"ready-for-review\",\"title\":{\"defaultMessage\":\"Ready for review\",\"id\":\"workqueue.readyForReview\",\"description\":\"\"},\"columns\":[],\"actions\":[],\"query\":{}}],"meta":{}}}}]'; }   location ~ "^/(locations\.lst|user-getUser|user\.|events\.|forms\.|notification\.)" { default_type application/json; return 200 '[{"result":{"data":{"json":[],"meta":{}}}}]'; }   location / { return 200 '{}'; } }
+kind: ConfigMap
+metadata:
+  annotations:
+    iun.sn/mvp-mode: mock
+    iun.sn/note: CM live rapatrie (drift) + V2_EVENTS deplace dans FEATURES (fix boucle redirectToWorkqueue)
+    iun.sn/reconciled-from-live: '2026-06-12'
+    iun.sn/sprint-3-todo: fork farajaland repository and supply real form schemas + handlebars templates
+  labels:
+    app.kubernetes.io/component: opencrvs
+    app.kubernetes.io/name: countryconfig
+  name: countryconfig-sn-data
+  namespace: iun-opencrvs-dev
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: countryconfig
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: countryconfig
+    app.kubernetes.io/component: opencrvs
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3040
+      targetPort: 3040
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: countryconfig
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: countryconfig
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: countryconfig
+    app.kubernetes.io/component: opencrvs
+  annotations:
+    iun.sn/mvp-mode: "mock"
+    iun.sn/image-tag-verified: "2026-06-03 ??? nginx:alpine"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: countryconfig
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: countryconfig
+        app.kubernetes.io/component: opencrvs
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+      containers:
+        - name: countryconfig
+          image: docker.io/nginxinc/nginx-unprivileged:alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3040
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 3040
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 4
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 3040
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: countryconfig-sn-data
+            items:
+              - key: default.conf
+                path: default.conf

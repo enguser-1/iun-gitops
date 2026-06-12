@@ -324,3 +324,29 @@ function Test-OcAccess {
 Export-ModuleMember -Function Invoke-Oc, Get-OcJson, Test-OcAccess,
                               Set-OcGlobalFlags, Get-OcGlobalFlags,
                               ConvertTo-Win32Arg
+
+# ---------------------------------------------------------------------------
+# Show-Oc - QoL debug : execute oc et affiche directement stdout/stderr.
+# Evite le piege du formateur PS qui tronque les PSCustomObject (Stdout...).
+# Ajout 2026-06-12.
+# ---------------------------------------------------------------------------
+function Show-Oc {
+    <#
+    .SYNOPSIS
+        Comme Invoke-Oc mais affiche directement la sortie (pas d'objet a deballer).
+    .EXAMPLE
+        Show-Oc @('-n','iun-opencrvs-dev','get','pods','-o','wide')
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0)] [string[]] $OcArgs,
+        [int] $TimeoutSeconds = 120
+    )
+    $r = Invoke-Oc -OcArgs $OcArgs -TimeoutSeconds $TimeoutSeconds -AllowFailure
+    if ($r.Stdout) { Write-Host $r.Stdout }
+    if ($r.Stderr) { Write-Host $r.Stderr -ForegroundColor Yellow }
+    if ($r.ExitCode -ne 0) { Write-Host ("exit={0}" -f $r.ExitCode) -ForegroundColor Red }
+    return
+}
+
+Export-ModuleMember -Function Show-Oc

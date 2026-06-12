@@ -1,0 +1,104 @@
+# ============================================================================
+# 13-routes.yaml — OpenShift Routes (4 edge-TLS endpoints)
+# ----------------------------------------------------------------------------
+# Purpose      : expose client (PWA), login, gateway (GraphQL), and minio
+#                (S3 + presigned URLs for browser uploads).
+# Dependencies : Services client, login, gateway, minio all Ready.
+# Override     : For prod, replace edge TLS with reencrypt + your own cert ;
+#                here we use OCP default ingress wildcard cert.
+# Gotchas      :
+#   - PITFALLS #8 — edge vs passthrough : edge is fine here because we have
+#     no OpenHIM doing mTLS on top. Reconsider if Sprint 3 adds OpenHIM.
+#   - The minio Route MUST resolve to iun-civil-docs-dev (matches
+#     MINIO_SERVER_URL in 04-minio.yaml — PITFALLS #12).
+# ============================================================================
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: iun-civil-client
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: client
+    app.kubernetes.io/component: opencrvs
+spec:
+  host: iun-opencrvs-app-dev.apps.origins.heritage.africa
+  to:
+    kind: Service
+    name: client
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: iun-civil-login
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: login
+    app.kubernetes.io/component: opencrvs
+spec:
+  host: iun-civil-login-dev.apps.origins.heritage.africa
+  to:
+    kind: Service
+    name: login
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: iun-civil-api
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/component: opencrvs
+  annotations:
+    haproxy.router.openshift.io/timeout: "60s"
+    # PITFALLS #7 — increase buffer if JWT > 8 KiB:
+    # haproxy.router.openshift.io/buffer-size: "32k"
+spec:
+  host: iun-civil-api-dev.apps.origins.heritage.africa
+  to:
+    kind: Service
+    name: gateway
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: iun-civil-docs
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: infra
+  annotations:
+    haproxy.router.openshift.io/timeout: "300s"
+    # MinIO uploads can be large.
+spec:
+  host: iun-civil-docs-dev.apps.origins.heritage.africa
+  to:
+    kind: Service
+    name: minio
+    weight: 100
+  port:
+    targetPort: s3
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
