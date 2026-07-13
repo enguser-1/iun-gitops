@@ -1,0 +1,53 @@
+# ============================================================================
+# 17-hearth-location-view.yaml — vue Mongo requise par GET /records/{id}
+# ----------------------------------------------------------------------------
+# Contexte : les migrations Hearth 1.9.13 etaient incompletes -> la vue
+#   'Location_view_with_plain_ids' manquait dans hearth-dev, provoquant un 500
+#   (unresolved reference) sur /records/{id} et bloquant download-record/assign
+#   (session 2026-06-13). Creee live a l'epoque ; ce Job la rend reproductible.
+# Idempotent : re-runnable sans risque (verifie l'existence avant creation).
+# Apply STANDALONE (comme 14/15/16, hors kustomization) :
+#   oc delete job hearth-location-view -n iun-opencrvs-dev --ignore-not-found
+#   oc apply -f 17-hearth-location-view.yaml
+# Verif : oc logs job/hearth-location-view -n iun-opencrvs-dev
+#   -> "VIEW CREATED" ou "VIEW ALREADY EXISTS"
+# ============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hearth-location-view
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: hearth-location-view
+    app.kubernetes.io/part-of: opencrvs
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hearth-location-view
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: create-view
+          # meme image que 01-mongodb-statefulset.yaml (shell = mongo, pas mongosh)
+          image: docker.io/mongo:4.4
+          env:
+            - name: MONGO_APP_USER
+              valueFrom: { secretKeyRef: { name: mongodb-creds, key: app-username } }
+            - name: MONGO_APP_PASSWORD
+              valueFrom: { secretKeyRef: { name: mongodb-creds, key: app-password } }
+          command:
+            - sh
+            - -c
+            - |
+              mongo "mongodb://$(MONGO_APP_USER):$(MONGO_APP_PASSWORD)@mongo-headless:27017/hearth-dev" --quiet --eval '
+                var n = db.getCollectionNames();
+                if (n.indexOf("Location_view_with_plain_ids") === -1) {
+                  db.createView("Location_view_with_plain_ids", "Location",
+                    [{$addFields: {"partOf.reference": {$arrayElemAt: [{$split: ["$partOf.reference", "/"]}, 1]}}}]);
+                  print("VIEW CREATED");
+                } else {
+                  print("VIEW ALREADY EXISTS");
+                }'

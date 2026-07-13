@@ -1,0 +1,39 @@
+# Override prod — 2 replicas, ressources augmentees, pinning digest obligatoire
+image:
+  namespace: iun-opencrvs-prod
+  # OBLIGATOIRE : renseigner le digest via CI apres build
+  digest: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+env:
+  DRY_RUN: "false"
+  POLL_INTERVAL_S: "30"
+
+route:
+  host: "iun-uin-cert.apps.origins.heritage.africa"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/status"
+
+# HA : anti-affinity soft pour eviter co-scheduling
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: iun-uin-bridge
+          topologyKey: kubernetes.io/hostname

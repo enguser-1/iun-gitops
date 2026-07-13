@@ -1,0 +1,38 @@
+🇸🇳  IUN Sénégal — pont OpenCRVS ↔ iun-uin-service (v{{ .Chart.AppVersion }}) déployé.
+
+Namespace : {{ .Release.Namespace }}
+Release    : {{ .Release.Name }}
+
+Endpoints internes :
+  Service   : {{ include "iun-uin-bridge.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+  /ping     : http://{{ include "iun-uin-bridge.fullname" . }}:{{ .Values.service.port }}/ping
+  /status   : http://{{ include "iun-uin-bridge.fullname" . }}:{{ .Values.service.port }}/status
+{{- if .Values.route.enabled }}
+
+Route publique (HTTPS) :
+  Registre  : https://{{ .Values.route.host }}/records
+  Cert      : https://{{ .Values.route.host }}/certificate/birth/{patient_id}
+              https://{{ .Values.route.host }}/certificate/death/{patient_id}
+  Status    : https://{{ .Values.route.host }}/status
+{{- end }}
+
+Vérifier :
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl -n {{ .Release.Namespace }} logs -f deploy/{{ include "iun-uin-bridge.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "iun-uin-bridge.fullname" . }} -- curl -s http://localhost:8080/status | jq
+
+Build image (si BuildConfig activé) :
+  oc -n {{ .Release.Namespace }} start-build {{ include "iun-uin-bridge.name" . }} --from-dir=./bridge/ --follow
+  # récupérer le digest push puis pinner :
+  oc -n {{ .Release.Namespace }} set image deploy/{{ include "iun-uin-bridge.fullname" . }} bridge=<image>@<digest>
+
+Configuration :
+  DRY_RUN            : {{ index .Values.env "DRY_RUN" }} (true = observation, false = mutation)
+  POLL_INTERVAL_S    : {{ index .Values.env "POLL_INTERVAL_S" }}
+  HEARTH_URL         : {{ index .Values.env "HEARTH_URL" }}
+  UIN_SERVICE_URL    : {{ index .Values.env "UIN_SERVICE_URL" }}
+  MONGO secret       : {{ .Values.mongo.existingSecret }} (key={{ .Values.mongo.secretKey }})
+
+Prochaines briques (chart séparés à venir) :
+  - iun-uin-service  : IDgenerator MOSIP-compatible (mint UIN Verhoeff)
+  - iun-cmu-bridge   : pont OpenIMIS (assurance maladie)

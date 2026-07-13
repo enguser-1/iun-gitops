@@ -1,0 +1,25 @@
+{{- if .Values.build.enabled -}}
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: {{ include "iun-uin-bridge.name" . }}
+  labels:
+    {{- include "iun-uin-bridge.labels" . | nindent 4 }}
+spec:
+  failedBuildsHistoryLimit: 5
+  successfulBuildsHistoryLimit: 5
+  runPolicy: Serial
+  source:
+    type: {{ .Values.build.source.type | title }}
+    binary: {}
+  strategy:
+    type: {{ .Values.build.strategy | title }}
+    dockerStrategy:
+      dockerfilePath: {{ .Values.build.dockerfilePath }}
+  output:
+    to:
+      kind: ImageStreamTag
+      name: {{ printf "%s:%s" (include "iun-uin-bridge.name" .) .Values.image.tag }}
+  postCommit: {}
+  resources: {}
+{{- end -}}

@@ -1,0 +1,97 @@
+# Default values pour iun-uin-bridge Helm chart.
+# Surcharge par environnement via values-<env>.yaml (dev, staging, prod).
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: image-registry.openshift-image-registry.svc:5000
+  namespace: iun-opencrvs-dev
+  repository: iun-uin-bridge
+  tag: latest
+  # Utiliser digest en prod pour immutabilité (auto-set par CI ou manuellement)
+  digest: ""
+  pullPolicy: Always
+
+# Build config OpenShift (BuildConfig + ImageStream)
+build:
+  enabled: true
+  strategy: docker
+  source:
+    type: binary
+  dockerfilePath: Dockerfile
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Environnement du pod
+env:
+  # DRY_RUN=true pour ne pas muter Hearth (mode observation)
+  DRY_RUN: "false"
+  # Frequence de poll Hearth en secondes
+  POLL_INTERVAL_S: "30"
+  # HEARTH endpoint interne
+  HEARTH_URL: "http://hearth:3447"
+  # iun-uin-service endpoint (MOSIP-compatible IDgenerator)
+  UIN_SERVICE_URL: "http://iun-uin-service.iun-mosip-dev.svc.cluster.local:8080"
+
+# Mongo credentials — reference un Secret existant contenant MONGO_URL complet
+# Format: mongodb://user:pass@mongo-headless:27017/hearth-dev?authSource=user-mgnt
+mongo:
+  existingSecret: "mongo-hearth-uri"
+  secretKey: "MONGO_URL"
+
+service:
+  enabled: true
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+# Route OpenShift pour exposer /records et /certificate publiquement
+route:
+  enabled: true
+  host: "iun-uin-cert-dev.apps.origins.heritage.africa"
+  tls:
+    enabled: true
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+# ServiceAccount minimal
+serviceAccount:
+  create: true
+  automountServiceAccountToken: false
+
+# Health probes
+livenessProbe:
+  httpGet:
+    path: /ping
+    port: 8080
+  initialDelaySeconds: 20
+  periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 4
+
+readinessProbe:
+  httpGet:
+    path: /ping
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 4
+
+# Labels et annotations custom
+podLabels: {}
+podAnnotations: {}
+
+# Node affinity / tolerations si besoin
+nodeSelector: {}
+tolerations: []
+affinity: {}

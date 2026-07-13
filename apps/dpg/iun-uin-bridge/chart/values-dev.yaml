@@ -1,0 +1,19 @@
+# Override dev — mode observation possible, verbose logs
+image:
+  namespace: iun-opencrvs-dev
+  tag: latest
+
+env:
+  DRY_RUN: "false"
+  POLL_INTERVAL_S: "30"
+
+route:
+  host: "iun-uin-cert-dev.apps.origins.heritage.africa"
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

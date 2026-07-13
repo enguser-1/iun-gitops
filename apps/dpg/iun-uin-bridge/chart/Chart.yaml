@@ -1,0 +1,24 @@
+apiVersion: v2
+name: iun-uin-bridge
+description: |
+  IUN Sénégal — pont OpenCRVS ↔ iun-uin-service (MOSIP).
+  Détecte les Task REGISTERED birth/death dans Hearth, mint UIN Verhoeff via
+  iun-uin-service, formate en SN-XXXX-XXXX-XX, génère BRN régional (birth)
+  ou DRN (death) au format RRR-YYYY-NNNNNN, écrit back sur le Patient FHIR.
+  Expose /records (registre HTML), /certificate/birth/{id} (SVG rendu),
+  /status (métriques poller).
+type: application
+version: 2.5.0
+appVersion: "2.5.0"
+keywords:
+  - opencrvs
+  - civil-registration
+  - senegal
+  - fhir
+  - mosip
+  - uin
+maintainers:
+  - name: IUN Sénégal
+    url: https://iun.sn
+sources:
+  - https://github.com/iun-sn/uin-bridge

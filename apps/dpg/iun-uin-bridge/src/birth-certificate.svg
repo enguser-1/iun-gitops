@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="595" height="842" viewBox="0 0 595 842">
+  <!-- Background -->
+  <rect width="595" height="842" fill="#ffffff"/>
+
+  <!-- Sénégal flag stripes (top) -->
+  <rect x="0" y="0" width="198.3" height="12" fill="#00853F"/>
+  <rect x="198.3" y="0" width="198.4" height="12" fill="#FDEF42"/>
+  <rect x="396.7" y="0" width="198.3" height="12" fill="#E31B23"/>
+
+  <!-- Header block -->
+  <text x="297.5" y="45" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="bold" fill="#00853F" text-anchor="middle">REPUBLIQUE DU SENEGAL</text>
+  <text x="297.5" y="63" font-family="Helvetica, Arial, sans-serif" font-size="10" font-style="italic" fill="#333333" text-anchor="middle">Un Peuple - Un But - Une Foi</text>
+  <text x="297.5" y="82" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#333333" text-anchor="middle">Ministere de l'Interieur et de la Securite Publique</text>
+  <text x="297.5" y="98" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#555555" text-anchor="middle">Direction Generale de l'Etat Civil</text>
+
+  <!-- Separator -->
+  <line x1="60" y1="115" x2="535" y2="115" stroke="#00853F" stroke-width="2"/>
+
+  <!-- Title -->
+  <text x="297.5" y="150" font-family="Helvetica, Arial, sans-serif" font-size="22" font-weight="bold" fill="#00853F" text-anchor="middle">EXTRAIT D'ACTE DE NAISSANCE</text>
+  <text x="297.5" y="170" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#666666" text-anchor="middle">Copie integrale certifiee conforme au registre</text>
+
+  <!-- BRN + IUN prominent box -->
+  <rect x="60" y="195" width="475" height="80" fill="#F5F9F5" stroke="#00853F" stroke-width="1.5"/>
+  <line x1="297.5" y1="195" x2="297.5" y2="275" stroke="#00853F" stroke-width="1"/>
+
+  <text x="75" y="215" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#00853F" font-weight="bold">NUMERO D'ACTE (BRN)</text>
+  <text x="75" y="248" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="bold" fill="#111111">{{registrationNumber}}</text>
+  <text x="75" y="265" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#888888">Region - Annee - Sequence</text>
+
+  <text x="312" y="215" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#00853F" font-weight="bold">IDENTIFIANT UNIQUE NATIONAL (IUN)</text>
+  <text x="312" y="248" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="bold" fill="#00853F">{{nationalId}}</text>
+  <text x="312" y="265" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#888888">10 chiffres Verhoeff, prefixe SN</text>
+
+  <!-- Section: Enfant -->
+  <text x="60" y="315" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#00853F">IDENTITE DE L'ENFANT</text>
+  <line x1="60" y1="320" x2="535" y2="320" stroke="#00853F" stroke-width="0.5"/>
+
+  <text x="60" y="345" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#666666">Nom et prenoms</text>
+  <text x="60" y="363" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#111111">{{childFirstName}} {{childFamilyName}}</text>
+
+  <text x="320" y="345" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#666666">Sexe</text>
+  <text x="320" y="363" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#111111">{{childGender}}</text>
+
+  <text x="60" y="395" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#666666">Date de naissance</text>
+  <text x="60" y="413" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#111111">{{eventDate}}</text>
+
+  <text x="320" y="395" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#666666">Lieu de naissance</text>
+  <text x="320" y="413" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#111111">{{placeOfBirth}}</text>
+
+  <!-- Section: Filiation -->
+  <text x="60" y="460" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#00853F">FILIATION</text>
+  <line x1="60" y1="465" x2="535" y2="465" stroke="#00853F" stroke-width="0.5"/>
+
+  <text x="60" y="490" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#666666">Mere</text>
+  <text x="60" y="508" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#111111">{{motherFirstName}} {{motherFamilyName}}</text>
+
+  <text x="60" y="535" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#666666">Pere</text>
+  <text x="60" y="553" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#111111">{{fatherFirstName}} {{fatherFamilyName}}</text>
+
+  <!-- Section: Enregistrement -->
+  <text x="60" y="600" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#00853F">ENREGISTREMENT</text>
+  <line x1="60" y1="605" x2="535" y2="605" stroke="#00853F" stroke-width="0.5"/>
+
+  <text x="60" y="630" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#666666">Bureau d'etat civil</text>
+  <text x="60" y="648" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#111111">{{registrationLocation}}</text>
+
+  <text x="320" y="630" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#666666">Date d'enregistrement</text>
+  <text x="320" y="648" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#111111">{{registrationDate}}</text>
+
+  <!-- Signature block -->
+  <text x="60" y="720" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#666666">Delivre le {{certificateDate}} a</text>
+  <text x="60" y="738" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#111111">{{registrationLocation}}</text>
+
+  <text x="360" y="720" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#666666">L'Officier d'Etat Civil</text>
+  <text x="360" y="738" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="bold" fill="#111111">{{registrarName}}</text>
+  <line x1="360" y1="765" x2="535" y2="765" stroke="#000000" stroke-width="0.5"/>
+  <text x="447.5" y="778" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#666666" text-anchor="middle">Signature et cachet</text>
+
+  <!-- QR code de verification -->
+  <image href="{{qrCodeDataUri}}" x="60" y="750" width="70" height="70"/>
+  <text x="145" y="775" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#666666">Tracking ID : {{trackingId}}</text>
+  <text x="145" y="790" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#666666">Informant : {{informantName}}</text>
+  <text x="145" y="805" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#999999">Scanner le QR pour verifier l'authenticite</text>
+
+  <!-- Footer -->
+  <line x1="60" y1="822" x2="535" y2="822" stroke="#00853F" stroke-width="0.5"/>
+  <text x="297.5" y="835" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#888888" text-anchor="middle">IUN Senegal - Systeme d'etat civil numerique - Document securise</text>
+</svg>

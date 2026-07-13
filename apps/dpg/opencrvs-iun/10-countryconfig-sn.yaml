@@ -1,109 +1,324 @@
+# ============================================================================
+# 10-countryconfig-sn.yaml - RECONCILED FROM LIVE 2026-07-13
+# ----------------------------------------------------------------------------
+# Exporte par sync-gitops.ps1. Contenu : CM countryconfig-sn-data (5 cles :
+#   default.conf avec proxy /fonts -> countryconfig-real + route
+#   /certificates/birth-cert.svg ; config.json avec certificates[0].fonts =
+#   Noto Sans (fix onglet blanc pdfmake) + hash ; locations.json ; roles.json ;
+#   birth-cert.svg Noto Sans, layout "Delivre le {date} a" sans chevauchement),
+#   Service countryconfig, Deployment nginx mock (volume items 5 cles).
+# Toute modif du SVG => recalculer le SHA-256 dans certificates[0].hash.
+# ============================================================================
 apiVersion: v1
 data:
-  default.conf: |-
-    server {   listen 3040;   server_name _;   default_type application/json;   gzip on;    location = /ping { return 200 'OK'; }   location = /publicConfig { return 200 '{"config":{"APPLICATION_NAME":"IUN Senegal MVP","BIRTH":{"REGISTRATION_TARGET":365,"LATE_REGISTRATION_TARGET":1825,"FEE":{"ON_TIME":0,"LATE":1000,"DELAYED":2000}},"DEATH":{"REGISTRATION_TARGET":30,"LATE_REGISTRATION_TARGET":365,"FEE":{"ON_TIME":0,"LATE":500,"DELAYED":1000}},"MARRIAGE":{"REGISTRATION_TARGET":30,"FEE":{"ON_TIME":5,"DELAYED":15}},"COUNTRY":"SN","COUNTRY_LOGO":{"url":"","fileName":""},"CURRENCY":{"isoCode":"XOF","languagesAndCountry":["fr-SN"]},"LANGUAGES":"fr,wo","PHONE_NUMBER_PATTERN":"^7[05678][0-9]{7}","NID_NUMBER_PATTERN":"^[0-9]{10}","INFORMANT_SIGNATURE":true,"INFORMANT_SIGNATURE_REQUIRED":false,"USER_NOTIFICATION_DELIVERY_METHOD":"sms","INFORMANT_NOTIFICATION_DELIVERY_METHOD":"sms","FEATURES":{"DEATH_REGISTRATION":true,"MARRIAGE_REGISTRATION":true,"EXTERNAL_VALIDATION_WORKFLOW":false,"PRINT_DECLARATION":true},"DATE_OF_BIRTH_UNKNOWN":false,"ADDRESSES":1,"ADMIN_LEVELS":2,"HIDE_EVENT_REGISTER_INFORMATION":false,"EXTERNAL_VALIDATION_WORKFLOW":false,"INTEGRATIONS":[]}}'; }   location = /config { return 200 '{"config":{"APPLICATION_NAME":"IUN Senegal MVP","BIRTH":{"REGISTRATION_TARGET":30,"LATE_REGISTRATION_TARGET":365,"PRINT_IN_ADVANCE":true,"FEE":{"ON_TIME":0,"LATE":1000,"DELAYED":2000}},"DEATH":{"REGISTRATION_TARGET":30,"PRINT_IN_ADVANCE":true,"FEE":{"ON_TIME":0,"LATE":500,"DELAYED":1000}},"MARRIAGE":{"REGISTRATION_TARGET":30,"PRINT_IN_ADVANCE":true,"FEE":{"ON_TIME":5,"DELAYED":15}},"ADMIN_STRUCTURE":[],"COUNTRY":"SN","COUNTRY_LOGO":{"url":"","fileName":"logo.png","file":""},"CURRENCY":{"isoCode":"XOF","languagesAndCountry":["fr-SN"]},"LANGUAGES":"fr,wo","PHONE_NUMBER_PATTERN":"^7","NID_NUMBER_PATTERN":"^0","FEATURES":{"DEATH_REGISTRATION":true,"MARRIAGE_REGISTRATION":false,"EXTERNAL_VALIDATION_WORKQUEUE":false,"PRINT_DECLARATION":false,"DATE_OF_BIRTH_UNKNOWN":false,"V2_EVENTS":false},"FIELD_AGENT_AUDIT_LOCATIONS":"DISTRICT","DECLARATION_AUDIT_LOCATIONS":"DISTRICT","LOGIN_BACKGROUND":{"backgroundColor":"36304E"},"USER_NOTIFICATION_DELIVERY_METHOD":"sms","INFORMANT_NOTIFICATION_DELIVERY_METHOD":"sms","INFORMANT_SIGNATURE":false,"INFORMANT_SIGNATURE_REQUIRED":false,"ADDRESSES":1,"ADMIN_LEVELS":2,"HIDE_EVENT_REGISTER_INFORMATION":false,"INTEGRATIONS":[]},"certificates":[],"systems":[]}'; }     location = /login-config.js {     default_type application/javascript;     return 200 'window.config = { AUTH_API_URL: "https://iun-civil-auth-dev.apps.origins.heritage.africa/", CONFIG_API_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/api/countryconfig", COUNTRY: "SN", LANGUAGES: "fr,wo", CLIENT_APP_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/", APPLICATION_NAME: "IUN Senegal MVP", COUNTRY_CONFIG_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/api/countryconfig", PHONE_NUMBER_PATTERN: "^7[05678][0-9]{7}", SENTRY: "", LOGROCKET: "" };';   }    location = /client-config.js {     default_type application/javascript;     return 200 'window.config = { API_GATEWAY_URL: "https://iun-civil-api-dev.apps.origins.heritage.africa/", CONFIG_API_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig", AUTH_API_URL: "https://iun-civil-auth-dev.apps.origins.heritage.africa/", COUNTRY: "SN", LANGUAGES: "fr,wo", CLIENT_APP_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/", COUNTRY_LOGO: { url: "", fileName: "" }, BIRTH: { REGISTRATION_TARGET: 365, LATE_REGISTRATION_TARGET: 1825, FEE: { ON_TIME: 0, LATE: 1000, DELAYED: 2000 } }, DEATH: { REGISTRATION_TARGET: 30, LATE_REGISTRATION_TARGET: 365, FEE: { ON_TIME: 0, LATE: 500, DELAYED: 1000 } }, MARRIAGE: { REGISTRATION_TARGET: 30, FEE: { ON_TIME: 5, DELAYED: 15 } }, CURRENCY: { isoCode: "XOF", languagesAndCountry: ["fr-SN"] }, PHONE_NUMBER_PATTERN: "^7[05678][0-9]{7}", NID_NUMBER_PATTERN: "^[0-9]{10}", FEATURES: { DEATH_REGISTRATION: true, MARRIAGE_REGISTRATION: true, EXTERNAL_VALIDATION_WORKFLOW: false, INFORMANT_SIGNATURE: false, INFORMANT_SIGNATURE_REQUIRED: false, PRINT_DECLARATION: true, V2_EVENTS: false }, USER_NOTIFICATION_DELIVERY_METHOD: "sms", INFORMANT_NOTIFICATION_DELIVERY_METHOD: "sms", SENTRY: "", LOGROCKET: "", ADMIN_LEVELS: 2, APPLICATION_NAME: "IUN Senegal MVP", LOGIN_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa", DESKTOP_TIME_OUT_MILLISECONDS: 900000, CONNECTION_TIMEOUT: 60000, COUNTRY_CONFIG_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig", DASHBOARDS: [] };';   }    location = /content { return 200 '{"languages":["fr","wo"],"messages":{"fr":{"app.title":"IUN Senegal"},"wo":{"app.title":"IUN Senegal"}}}'; }   location = /application-config { return 200 '{"APPLICATION_NAME":"IUN Senegal MVP","BIRTH":{"REGISTRATION_TARGET":365,"LATE_REGISTRATION_TARGET":1825,"FEE":{"ON_TIME":0,"LATE":1000,"DELAYED":2000}},"DEATH":{"REGISTRATION_TARGET":30,"LATE_REGISTRATION_TARGET":365,"FEE":{"ON_TIME":0,"LATE":500,"DELAYED":1000}},"COUNTRY":"SN","COUNTRY_LOGO":"","CURRENCY":{"isoCode":"XOF","languagesAndCountry":["fr-SN"]},"LANGUAGES":"fr,wo","PHONE_NUMBER_PATTERN":"^7[05678][0-9]{7}","NID_NUMBER_PATTERN":"^[0-9]{10}","INFORMANT_SIGNATURE":true,"INFORMANT_SIGNATURE_REQUIRED":false}'; }    location = /locations { return 200 '{"locations":[]}'; }   location = /facilities { return 200 '{"facilities":[]}'; }   location = /events { return 200 '[]'; }   location = /roles { return 200 '[{"id":"FIELD_AGENT","label":{"defaultMessage":"Field Agent","description":"Name for user role Field Agent","id":"userRole.fieldAgent"},"scopes":["record.create[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.declare-birth","record.declare-death","record.declare-marriage","record.submit-incomplete","record.submit-for-review","search.birth:my-jurisdiction","search.death:my-jurisdiction","search.marriage:my-jurisdiction"]},{"id":"REGISTRATION_AGENT","label":{"defaultMessage":"Registration Agent","description":"Name for user role Registration Agent","id":"userRole.registrationAgent"},"scopes":["record.create[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.declare-birth","record.declare-death","record.declare-marriage","record.submit-for-approval","record.submit-for-updates","record.declaration-archive","record.declaration-reinstate","record.registration-request-correction","record.print-issue-certified-copies","performance.read","performance.read-dashboards","organisation.read-locations:all","organisation.read-locations:my-office","search.birth","search.death","search.marriage"]},{"id":"LOCAL_REGISTRAR","label":{"defaultMessage":"Local Registrar","description":"Name for user role Local Registrar","id":"userRole.localRegistrar"},"scopes":["record.create[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.declare-birth","record.declare-death","record.declare-marriage","record.submit-for-updates","record.review-duplicates","record.declared.review-duplicates[event=birth|death|tennis-club-membership]","record.declaration-archive","record.declaration-reinstate","record.register","record.registration-correct","record.print-issue-certified-copies","performance.read","performance.read-dashboards","organisation.read-locations:all","profile.electronic-signature","organisation.read-locations:my-office","search.birth","search.death","search.marriage"]},{"id":"LOCAL_SYSTEM_ADMIN","label":{"defaultMessage":"Local System Admin","description":"Name for user role Local System Admin","id":"userRole.localSystemAdmin"},"scopes":["user.read:my-office","user.create:my-jurisdiction","user.update:my-jurisdiction","organisation.read-locations:all","performance.read","performance.read-dashboards","performance.vital-statistics-export"]},{"id":"NATIONAL_SYSTEM_ADMIN","label":{"defaultMessage":"National System Admin","description":"Name for user role National System Admin","id":"userRole.nationalSystemAdmin"},"scopes":["user.create:all","user.read:all","user.update:all","organisation.read-locations:all","performance.read","performance.read-dashboards","performance.vital-statistics-export"]},{"id":"PERFORMANCE_MANAGER","label":{"defaultMessage":"Performance Manager","description":"Name for user role Performance Manager","id":"userRole.performanceManager"},"scopes":["performance.read","performance.read-dashboards","performance.vital-statistics-export"]}]'; }   location = /handlebars { return 200 '{}'; }   location = /admin-structure { return 200 '{"locations":[],"facilities":[]}'; }   location = /notification { return 200 '{"status":"queued","provider":"mock-sms"}'; }    location /trigger/ { return 200 '{"status":"ok","mock":true}'; }   location /events/  { return 200 '{"status":"ok","mock":true}'; }   location = /forms { return 200 '{"version":"0.0.1","birth":{"sections":[]},"death":{"sections":[]},"marriage":{"sections":[]}}'; }   location /forms/ { return 200 '{"version":"0.0.1","birth":{"sections":[]},"death":{"sections":[]},"marriage":{"sections":[]}}'; }    location /static/ {     default_type image/svg+xml;     return 200 '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';   }   location = /static/manifest.json {     default_type application/manifest+json;     return 200 '{"short_name":"IUN","name":"IUN Senegal","start_url":"/","display":"standalone","theme_color":"#4c68c1","background_color":"#f5f5f5","icons":[]}';   }     location = /validators.js {     default_type application/javascript;     return 200 'export const validators = {}; export default {};';   }    location = /conditionals.js {     default_type application/javascript;     return 200 'export const conditionals = {}; export default {};';   }    location = /handlebars.js {     default_type application/javascript;     return 200 'export default {};';   }    location = /content/client {     return 200 '{"languages":[{"lang":"fr","displayName":"Francais","messages":{"app.title":"IUN Senegal"}},{"lang":"wo","displayName":"Wolof","messages":{"app.title":"IUN Senegal"}}]}';   }   location = /content/login { return 200 '{"languages":[{"lang":"fr","displayName":"Francais","messages":{"app.title":"IUN Senegal","login.username":"Nom utilisateur","login.password":"Mot de passe","login.submit":"Connexion"}}]}'; }     location ~ "^/workqueue\.config" { default_type application/json; return 200 '[{"result":{"data":{"json":[{\"id\":\"ready-for-review\",\"title\":{\"defaultMessage\":\"Ready for review\",\"id\":\"workqueue.readyForReview\",\"description\":\"\"},\"columns\":[],\"actions\":[],\"query\":{}}],"meta":{}}}}]'; }   location ~ "^/(locations\.lst|user-getUser|user\.|events\.|forms\.|notification\.)" { default_type application/json; return 200 '[{"result":{"data":{"json":[],"meta":{}}}}]'; }   location / { return 200 '{}'; } }
+  birth-cert.svg: <svg xmlns="http://www.w3.org/2000/svg" width="595" height="842"
+    viewBox="0 0 595 842">  <rect width="595" height="842" fill="#ffffff"/>  <rect
+    x="0" y="0" width="198.3" height="12" fill="#00853F"/>  <rect x="198.3" y="0"
+    width="198.4" height="12" fill="#FDEF42"/>  <rect x="396.7" y="0" width="198.3"
+    height="12" fill="#E31B23"/>  <text x="297.5" y="45" font-family="Noto Sans" font-size="14"
+    font-weight="bold" fill="#00853F" text-anchor="middle">REPUBLIQUE DU SENEGAL</text>  <text
+    x="297.5" y="63" font-family="Noto Sans" font-size="10" font-style="italic" fill="#333333"
+    text-anchor="middle">Un Peuple - Un But - Une Foi</text>  <text x="297.5" y="82"
+    font-family="Noto Sans" font-size="10" fill="#333333" text-anchor="middle">Ministere
+    de l'Interieur et de la Securite Publique</text>  <text x="297.5" y="98" font-family="Noto
+    Sans" font-size="9" fill="#555555" text-anchor="middle">Direction Generale de
+    l'Etat Civil</text>  <line x1="60" y1="115" x2="535" y2="115" stroke="#00853F"
+    stroke-width="2"/>  <text x="297.5" y="150" font-family="Noto Sans" font-size="22"
+    font-weight="bold" fill="#00853F" text-anchor="middle">EXTRAIT D'ACTE DE NAISSANCE</text>  <text
+    x="297.5" y="170" font-family="Noto Sans" font-size="10" fill="#666666" text-anchor="middle">Copie
+    integrale certifiee conforme au registre</text>  <rect x="60" y="195" width="475"
+    height="80" fill="#F5F9F5" stroke="#00853F" stroke-width="1.5"/>  <line x1="297.5"
+    y1="195" x2="297.5" y2="275" stroke="#00853F" stroke-width="1"/>  <text x="75"
+    y="215" font-family="Noto Sans" font-size="9" fill="#00853F" font-weight="bold">NUMERO
+    D'ACTE (BRN)</text>  <text x="75" y="248" font-family="Noto Sans" font-size="18"
+    font-weight="bold" fill="#111111">{{registrationNumber}}</text>  <text x="75"
+    y="265" font-family="Noto Sans" font-size="8" fill="#888888">Region - Annee -
+    Sequence</text>  <text x="312" y="215" font-family="Noto Sans" font-size="9" fill="#00853F"
+    font-weight="bold">IDENTIFIANT UNIQUE NATIONAL (IUN)</text>  <text x="312" y="248"
+    font-family="Noto Sans" font-size="18" font-weight="bold" fill="#00853F">{{nationalId}}</text>  <text
+    x="312" y="265" font-family="Noto Sans" font-size="8" fill="#888888">10 chiffres
+    Verhoeff, prefixe SN</text>  <text x="60" y="315" font-family="Noto Sans" font-size="13"
+    font-weight="bold" fill="#00853F">IDENTITE DE L'ENFANT</text>  <line x1="60" y1="320"
+    x2="535" y2="320" stroke="#00853F" stroke-width="0.5"/>  <text x="60" y="345"
+    font-family="Noto Sans" font-size="9" fill="#666666">Nom et prenoms</text>  <text
+    x="60" y="363" font-family="Noto Sans" font-size="12" fill="#111111">{{childFirstName}}
+    {{childFamilyName}}</text>  <text x="320" y="345" font-family="Noto Sans" font-size="9"
+    fill="#666666">Sexe</text>  <text x="320" y="363" font-family="Noto Sans" font-size="12"
+    fill="#111111">{{childGender}}</text>  <text x="60" y="395" font-family="Noto
+    Sans" font-size="9" fill="#666666">Date de naissance</text>  <text x="60" y="413"
+    font-family="Noto Sans" font-size="12" fill="#111111">{{eventDate}}</text>  <text
+    x="320" y="395" font-family="Noto Sans" font-size="9" fill="#666666">Lieu de naissance</text>  <text
+    x="320" y="413" font-family="Noto Sans" font-size="12" fill="#111111">{{placeOfBirth}}</text>  <text
+    x="60" y="460" font-family="Noto Sans" font-size="13" font-weight="bold" fill="#00853F">FILIATION</text>  <line
+    x1="60" y1="465" x2="535" y2="465" stroke="#00853F" stroke-width="0.5"/>  <text
+    x="60" y="490" font-family="Noto Sans" font-size="9" fill="#666666">Mere</text>  <text
+    x="60" y="508" font-family="Noto Sans" font-size="12" fill="#111111">{{motherFirstName}}
+    {{motherFamilyName}}</text>  <text x="60" y="535" font-family="Noto Sans" font-size="9"
+    fill="#666666">Pere</text>  <text x="60" y="553" font-family="Noto Sans" font-size="12"
+    fill="#111111">{{fatherFirstName}} {{fatherFamilyName}}</text>  <text x="60" y="600"
+    font-family="Noto Sans" font-size="13" font-weight="bold" fill="#00853F">ENREGISTREMENT</text>  <line
+    x1="60" y1="605" x2="535" y2="605" stroke="#00853F" stroke-width="0.5"/>  <text
+    x="60" y="630" font-family="Noto Sans" font-size="9" fill="#666666">Bureau d'etat
+    civil</text>  <text x="60" y="648" font-family="Noto Sans" font-size="12" fill="#111111">{{registrationLocation}}</text>  <text
+    x="320" y="630" font-family="Noto Sans" font-size="9" fill="#666666">Date d'enregistrement</text>  <text
+    x="320" y="648" font-family="Noto Sans" font-size="12" fill="#111111">{{registrationDate}}</text>  <text
+    x="60" y="720" font-family="Noto Sans" font-size="9" fill="#666666">Delivre le
+    {{certificateDate}} a</text>  <text x="60" y="738" font-family="Noto Sans" font-size="11"
+    fill="#111111">{{registrationLocation}}</text>  <text x="360" y="720" font-family="Noto
+    Sans" font-size="9" fill="#666666">L'Officier d'Etat Civil</text>  <text x="360"
+    y="738" font-family="Noto Sans" font-size="11" font-weight="bold" fill="#111111">{{registrarName}}</text>  <line
+    x1="360" y1="765" x2="535" y2="765" stroke="#000000" stroke-width="0.5"/>  <text
+    x="447.5" y="778" font-family="Noto Sans" font-size="8" fill="#666666" text-anchor="middle">Signature
+    et cachet</text>  <line x1="60" y1="822" x2="535" y2="822" stroke="#00853F" stroke-width="0.5"/>  <text
+    x="297.5" y="835" font-family="Noto Sans" font-size="7" fill="#888888" text-anchor="middle">IUN
+    Senegal - Systeme d'etat civil numerique - Document securise</text></svg>
+  config.json: '{"config":{"APPLICATION_NAME":"IUN Senegal MVP","BIRTH":{"REGISTRATION_TARGET":30,"LATE_REGISTRATION_TARGET":365,"PRINT_IN_ADVANCE":true,"FEE":{"ON_TIME":0,"LATE":1000,"DELAYED":2000}},"DEATH":{"REGISTRATION_TARGET":30,"PRINT_IN_ADVANCE":true,"FEE":{"ON_TIME":0,"LATE":500,"DELAYED":1000}},"MARRIAGE":{"REGISTRATION_TARGET":30,"PRINT_IN_ADVANCE":true,"FEE":{"ON_TIME":5,"DELAYED":15}},"ADMIN_STRUCTURE":[],"COUNTRY":"SEN","COUNTRY_LOGO":{"url":"","fileName":"logo.png","file":""},"CURRENCY":{"isoCode":"XOF","languagesAndCountry":["fr-SN"]},"LANGUAGES":"fr,en,bn","PHONE_NUMBER_PATTERN":"^7","NID_NUMBER_PATTERN":"^0","FEATURES":{"DEATH_REGISTRATION":true,"MARRIAGE_REGISTRATION":false,"EXTERNAL_VALIDATION_WORKQUEUE":false,"PRINT_DECLARATION":true,"DATE_OF_BIRTH_UNKNOWN":false,"V2_EVENTS":false},"FIELD_AGENT_AUDIT_LOCATIONS":"DISTRICT","DECLARATION_AUDIT_LOCATIONS":"DISTRICT","LOGIN_BACKGROUND":{"backgroundColor":"36304E"},"USER_NOTIFICATION_DELIVERY_METHOD":"sms","INFORMANT_NOTIFICATION_DELIVERY_METHOD":"sms","INFORMANT_SIGNATURE":false,"INFORMANT_SIGNATURE_REQUIRED":false,"ADDRESSES":1,"ADMIN_LEVELS":2,"HIDE_EVENT_REGISTER_INFORMATION":false,"INTEGRATIONS":[]},"certificates":[{"id":"sn-birth-certificate-v1","event":"birth","label":{"defaultMessage":"Extrait
+    d\u0027acte de naissance","description":"Certificat de naissance IUN Senegal","id":"certificate.birth.default"},"isDefault":true,"svgUrl":"https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig/certificates/birth-cert.svg","fee":{"onTime":0,"late":100,"delayed":200},"fonts":{"Noto
+    Sans":{"normal":"/api/countryconfig/fonts/NotoSans-Regular.ttf","bold":"/api/countryconfig/fonts/NotoSans-Bold.ttf","italics":"/api/countryconfig/fonts/NotoSans-Regular.ttf","bolditalics":"/api/countryconfig/fonts/NotoSans-Regular.ttf"}},"hash":"1d15eae2497cd71c9298f96e09e2c3706a9e6367509e2a366b0dd208aa8cdc50"}],"systems":[]}'
+  default.conf: 'server {   listen 3040;   server_name _;   default_type application/json;   gzip
+    on;    location = /ping { return 200 ''OK''; }   location = /publicConfig { return
+    200 ''{"config":{"APPLICATION_NAME":"IUN Senegal MVP","BIRTH":{"REGISTRATION_TARGET":365,"LATE_REGISTRATION_TARGET":1825,"FEE":{"ON_TIME":0,"LATE":1000,"DELAYED":2000}},"DEATH":{"REGISTRATION_TARGET":30,"LATE_REGISTRATION_TARGET":365,"FEE":{"ON_TIME":0,"LATE":500,"DELAYED":1000}},"MARRIAGE":{"REGISTRATION_TARGET":30,"FEE":{"ON_TIME":5,"DELAYED":15}},"COUNTRY":"SEN","COUNTRY_LOGO":{"url":"","fileName":""},"CURRENCY":{"isoCode":"XOF","languagesAndCountry":["fr-SN"]},"LANGUAGES":"fr,en,bn","PHONE_NUMBER_PATTERN":"^7[05678][0-9]{7}","NID_NUMBER_PATTERN":"^[0-9]{10}","INFORMANT_SIGNATURE":true,"INFORMANT_SIGNATURE_REQUIRED":false,"USER_NOTIFICATION_DELIVERY_METHOD":"sms","INFORMANT_NOTIFICATION_DELIVERY_METHOD":"sms","FEATURES":{"DEATH_REGISTRATION":true,"MARRIAGE_REGISTRATION":true,"EXTERNAL_VALIDATION_WORKFLOW":false,"PRINT_DECLARATION":true},"DATE_OF_BIRTH_UNKNOWN":false,"ADDRESSES":1,"ADMIN_LEVELS":2,"HIDE_EVENT_REGISTER_INFORMATION":false,"EXTERNAL_VALIDATION_WORKFLOW":false,"INTEGRATIONS":[]}}'';
+    }   location = /config { default_type application/json; root /etc/nginx/conf.d;
+    try_files /config.json =404; }     location = /login-config.js {     default_type
+    application/javascript;     return 200 ''window.config = { AUTH_API_URL: "https://iun-civil-auth-dev.apps.origins.heritage.africa/",
+    CONFIG_API_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/api/countryconfig",
+    COUNTRY: "SEN", LANGUAGES: "fr,en,bn", CLIENT_APP_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/",
+    APPLICATION_NAME: "IUN Senegal MVP", COUNTRY_CONFIG_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/api/countryconfig",
+    PHONE_NUMBER_PATTERN: "^7[05678][0-9]{7}", SENTRY: "", LOGROCKET: "" };'';   }    location
+    = /client-config.js {     default_type application/javascript;     return 200
+    ''window.config = { API_GATEWAY_URL: "https://iun-civil-api-dev.apps.origins.heritage.africa/",
+    CONFIG_API_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig",
+    AUTH_API_URL: "https://iun-civil-auth-dev.apps.origins.heritage.africa/", COUNTRY:
+    "SEN", LANGUAGES: "fr,en,bn", CLIENT_APP_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/",
+    COUNTRY_LOGO: { url: "", fileName: "" }, BIRTH: { REGISTRATION_TARGET: 365, LATE_REGISTRATION_TARGET:
+    1825, FEE: { ON_TIME: 0, LATE: 1000, DELAYED: 2000 } }, DEATH: { REGISTRATION_TARGET:
+    30, LATE_REGISTRATION_TARGET: 365, FEE: { ON_TIME: 0, LATE: 500, DELAYED: 1000
+    } }, MARRIAGE: { REGISTRATION_TARGET: 30, FEE: { ON_TIME: 5, DELAYED: 15 } },
+    CURRENCY: { isoCode: "XOF", languagesAndCountry: ["fr-SN"] }, PHONE_NUMBER_PATTERN:
+    "^7[05678][0-9]{7}", NID_NUMBER_PATTERN: "^[0-9]{10}", FEATURES: { DEATH_REGISTRATION:
+    true, MARRIAGE_REGISTRATION: true, EXTERNAL_VALIDATION_WORKFLOW: false, INFORMANT_SIGNATURE:
+    false, INFORMANT_SIGNATURE_REQUIRED: false, PRINT_DECLARATION: true, V2_EVENTS:
+    false }, USER_NOTIFICATION_DELIVERY_METHOD: "sms", INFORMANT_NOTIFICATION_DELIVERY_METHOD:
+    "sms", SENTRY: "", LOGROCKET: "", ADMIN_LEVELS: 2, APPLICATION_NAME: "IUN Senegal
+    MVP", LOGIN_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa",
+    DESKTOP_TIME_OUT_MILLISECONDS: 900000, CONNECTION_TIMEOUT: 60000, COUNTRY_CONFIG_URL:
+    "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig",
+    DASHBOARDS: [] };'';   }       location = /application-config { return 200 ''{"APPLICATION_NAME":"IUN
+    Senegal MVP","BIRTH":{"REGISTRATION_TARGET":365,"LATE_REGISTRATION_TARGET":1825,"FEE":{"ON_TIME":0,"LATE":1000,"DELAYED":2000}},"DEATH":{"REGISTRATION_TARGET":30,"LATE_REGISTRATION_TARGET":365,"FEE":{"ON_TIME":0,"LATE":500,"DELAYED":1000}},"COUNTRY":"SEN","COUNTRY_LOGO":"","CURRENCY":{"isoCode":"XOF","languagesAndCountry":["fr-SN"]},"LANGUAGES":"fr,en,bn","PHONE_NUMBER_PATTERN":"^7[05678][0-9]{7}","NID_NUMBER_PATTERN":"^[0-9]{10}","INFORMANT_SIGNATURE":true,"INFORMANT_SIGNATURE_REQUIRED":false}'';
+    }             location = /roles { default_type application/json; root /etc/nginx/conf.d;
+    try_files /roles.json =404; }         location = /notification { return 200 ''{"status":"queued","provider":"mock-sms"}'';
+    }                 location /static/ {     default_type image/svg+xml;     return
+    200 ''<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'';   }   location
+    = /static/manifest.json {     default_type application/manifest+json;     return
+    200 ''{"short_name":"IUN","name":"IUN Senegal","start_url":"/","display":"standalone","theme_color":"#4c68c1","background_color":"#f5f5f5","icons":[]}'';   }     location
+    = /validators.js {     default_type application/javascript;     return 200 ''export
+    const validators = {}; export default {};'';   }    location = /conditionals.js
+    {     default_type application/javascript;     return 200 ''export const conditionals
+    = {}; export default {};'';   }                location ~ "^/workqueue\.config"
+    { default_type application/json; return 200 ''[{"result":{"data":{"json":[{\"slug\":\"ready-for-review\",\"name\":{\"defaultMessage\":\"Ready
+    for review\",\"description\":\"Workqueue title\",\"id\":\"workqueue.readyForReview\"},\"columns\":[],\"actions\":[],\"icon\":\"Files\",\"query\":{\"type\":\"and\",\"clauses\":[]}}],"meta":{}}}}]'';
+    }   location ~ "^/(locations\.lst|user-getUser|user\.|events\.|forms\.|notification\.)"
+    { default_type application/json; return 200 ''[{"result":{"data":{"json":[],"meta":{}}}}]'';
+    }   location = /locations { default_type application/json; root /etc/nginx/conf.d;
+    try_files /locations.json =404; }   location = /certificates/birth-cert.svg {
+    default_type image/svg+xml; root /etc/nginx/conf.d; try_files /birth-cert.svg
+    =404; }   location /fonts/ { proxy_pass http://countryconfig-real:3040; }   location
+    / {     proxy_pass http://countryconfig-real:3040;     proxy_set_header Host $host;     proxy_set_header
+    X-Real-IP $remote_addr;     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;     proxy_set_header
+    X-Forwarded-Proto $scheme;     proxy_http_version 1.1;   } }'
+  locations.json: '[{"id":"c932f726-1374-4253-bd98-9d05d7c16321","name":"Bureau IUN
+    central","alias":"IUN HQ","partOf":"Location/0","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","name":"Senegal","alias":"Senegal","partOf":"Location/0","locationType":"ADMIN_STRUCTURE","jurisdictionType":"STATE","statistics":[]},{"id":"23cdaa09-ae2a-4d28-9d76-a159f43d78c6","name":"Dakar","alias":"Dakar","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"de504283-3161-46e8-a393-8a3654896892","name":"Thies","alias":"Thies","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"d6dcdccb-e3b4-47ee-8c87-cead33b97406","name":"Saint-Louis","alias":"Saint-Louis","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"bacd3eb5-05a0-41d1-9594-a194ec66f57f","name":"Kaolack","alias":"Kaolack","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"f29632bc-edde-48a0-9841-73e69840c415","name":"Diourbel","alias":"Diourbel","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"b16ceae1-93f6-4de7-90cc-c2694a288df6","name":"Louga","alias":"Louga","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"1d80a1c1-c5b3-42a4-9b8b-836098808983","name":"Fatick","alias":"Fatick","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"732a2983-09df-499c-84cd-aa03499131c7","name":"Tambacounda","alias":"Tambacounda","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"cb4da666-01dd-43c4-9234-1d04e6dd6934","name":"Kolda","alias":"Kolda","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"c24f5678-c30a-40f3-aeb0-5bae97384e4a","name":"Ziguinchor","alias":"Ziguinchor","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"be59ec1f-131b-481d-b0fa-97b77b2354be","name":"Matam","alias":"Matam","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"9947d4d3-ef1a-4c28-b19f-6e1655b31c43","name":"Kaffrine","alias":"Kaffrine","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"5546c26e-a26b-41f7-ad52-12cc80a28c4d","name":"Kedougou","alias":"Kedougou","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"2d8356a0-c647-4b40-9e27-2e84fa2c3e94","name":"Sedhiou","alias":"Sedhiou","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"67cc2db3-ce24-405b-9f94-5dbc7da9223b","name":"Diourbel","alias":"Diourbel","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"847c61bf-3ea9-46bf-8063-ccd89da776ff","name":"Fatick","alias":"Fatick","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"ce9aaf6e-c4a0-4e63-b954-6bea8e9b8595","name":"Kaffrine","alias":"Kaffrine","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"e0099a3f-b551-4edf-8c62-cefc0c2f197c","name":"Tambacounda","alias":"Tambacounda","partOf":"Location/eb78aefe-b37a-44ed-a0bd-da4382a6bfdc","locationType":"ADMIN_STRUCTURE","jurisdictionType":"DISTRICT","statistics":[]},{"id":"d0da5397-ccfa-420c-bd95-1fa244bc6f8d","name":"Dakar","alias":"Dakar","partOf":"Location/23cdaa09-ae2a-4d28-9d76-a159f43d78c6","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"8ac0323e-8728-4902-b9fe-f696ca659e4f","name":"Pikine","alias":"Pikine","partOf":"Location/23cdaa09-ae2a-4d28-9d76-a159f43d78c6","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"4b631642-95c0-4589-9c8f-051e9205cc74","name":"Guediawaye","alias":"Guediawaye","partOf":"Location/23cdaa09-ae2a-4d28-9d76-a159f43d78c6","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"052d06b3-1693-489b-b540-f11ce967dfea","name":"Rufisque","alias":"Rufisque","partOf":"Location/23cdaa09-ae2a-4d28-9d76-a159f43d78c6","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"31af8a20-f741-43c1-a265-b147223734b8","name":"Thies","alias":"Thies","partOf":"Location/de504283-3161-46e8-a393-8a3654896892","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"b572b0d1-3260-4b7c-9358-9c3eaacf1a7b","name":"Mbour","alias":"Mbour","partOf":"Location/de504283-3161-46e8-a393-8a3654896892","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"94b54325-0f9d-4b9f-ae1e-377e1af03ea6","name":"Tivaouane","alias":"Tivaouane","partOf":"Location/de504283-3161-46e8-a393-8a3654896892","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"8a037208-8ca8-4b5d-bcd7-77c02bd69e2b","name":"Diourbel","alias":"Diourbel","partOf":"Location/67cc2db3-ce24-405b-9f94-5dbc7da9223b","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"4e7f02bb-7973-4445-ac3d-555e0b39b5f7","name":"Bambey","alias":"Bambey","partOf":"Location/67cc2db3-ce24-405b-9f94-5dbc7da9223b","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"7be5b275-25aa-49ec-a909-4109888a56cd","name":"Mbacke","alias":"Mbacke","partOf":"Location/67cc2db3-ce24-405b-9f94-5dbc7da9223b","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"4ff4395e-d741-444a-a7d3-6c2dc120aca7","name":"Fatick","alias":"Fatick","partOf":"Location/847c61bf-3ea9-46bf-8063-ccd89da776ff","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"b16a945b-0f12-4a48-8e25-36bf2ebaada0","name":"Foundiougne","alias":"Foundiougne","partOf":"Location/847c61bf-3ea9-46bf-8063-ccd89da776ff","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"eb69a602-a903-49c1-bc31-6f2df7c1060b","name":"Gossas","alias":"Gossas","partOf":"Location/847c61bf-3ea9-46bf-8063-ccd89da776ff","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"2f41fa6e-90e4-4959-ad3f-ebf7c12b56c4","name":"Kaolack","alias":"Kaolack","partOf":"Location/bacd3eb5-05a0-41d1-9594-a194ec66f57f","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"513681c4-7ec0-4149-ad5e-4b54f9bfea80","name":"Guinguineo","alias":"Guinguineo","partOf":"Location/bacd3eb5-05a0-41d1-9594-a194ec66f57f","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"d80a59ab-52b6-4f33-9912-06ca8b91166d","name":"Nioro
+    du Rip","alias":"Nioro du Rip","partOf":"Location/bacd3eb5-05a0-41d1-9594-a194ec66f57f","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"30e22273-56a5-4179-9d73-9022fb6a018f","name":"Kaffrine","alias":"Kaffrine","partOf":"Location/ce9aaf6e-c4a0-4e63-b954-6bea8e9b8595","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"b5ef609f-c92a-4407-8469-8cc43f2dc9ec","name":"Birkilane","alias":"Birkilane","partOf":"Location/ce9aaf6e-c4a0-4e63-b954-6bea8e9b8595","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"f976816a-70d2-4d63-99b4-247b7fa2c15a","name":"Koungheul","alias":"Koungheul","partOf":"Location/ce9aaf6e-c4a0-4e63-b954-6bea8e9b8595","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"c266a633-f579-470e-8ad7-2f08f669f5ea","name":"Malem-Hodar","alias":"Malem-Hodar","partOf":"Location/ce9aaf6e-c4a0-4e63-b954-6bea8e9b8595","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"fc16f58a-bad1-4a1a-838c-fa3986686a55","name":"Louga","alias":"Louga","partOf":"Location/b16ceae1-93f6-4de7-90cc-c2694a288df6","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"6b407871-c345-43c1-81ce-adf21f92e3af","name":"Kebemer","alias":"Kebemer","partOf":"Location/b16ceae1-93f6-4de7-90cc-c2694a288df6","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"3394d084-74f6-49f4-a16b-65c45dd9daf8","name":"Linguere","alias":"Linguere","partOf":"Location/b16ceae1-93f6-4de7-90cc-c2694a288df6","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"c210f414-7382-479e-9a03-465a61431220","name":"Saint-Louis","alias":"Saint-Louis","partOf":"Location/d6dcdccb-e3b4-47ee-8c87-cead33b97406","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"e4cc7400-83b6-47b2-909c-b9e512965367","name":"Dagana","alias":"Dagana","partOf":"Location/d6dcdccb-e3b4-47ee-8c87-cead33b97406","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"cb6d919c-f8f7-4a07-a3cd-69f1ab76a6a1","name":"Podor","alias":"Podor","partOf":"Location/d6dcdccb-e3b4-47ee-8c87-cead33b97406","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"2ea448ea-f9bb-46a8-af5a-639771f75e6f","name":"Matam","alias":"Matam","partOf":"Location/be59ec1f-131b-481d-b0fa-97b77b2354be","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"f02a0435-32c8-40c0-acb5-435ecf98dd71","name":"Kanel","alias":"Kanel","partOf":"Location/be59ec1f-131b-481d-b0fa-97b77b2354be","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"ced957d0-e89c-4b2c-ae78-4d9169ce7630","name":"Ranerou","alias":"Ranerou","partOf":"Location/be59ec1f-131b-481d-b0fa-97b77b2354be","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"6fc8c1a8-c580-4466-89a9-0ef8b9784774","name":"Tambacounda","alias":"Tambacounda","partOf":"Location/e0099a3f-b551-4edf-8c62-cefc0c2f197c","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"3c51978e-9071-430c-8282-52691e176aad","name":"Bakel","alias":"Bakel","partOf":"Location/e0099a3f-b551-4edf-8c62-cefc0c2f197c","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"77de61f6-1aee-4f84-b824-fa220e085af9","name":"Goudiry","alias":"Goudiry","partOf":"Location/e0099a3f-b551-4edf-8c62-cefc0c2f197c","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"b459e534-ff4e-46c2-8144-584838ac7990","name":"Koumpentoum","alias":"Koumpentoum","partOf":"Location/e0099a3f-b551-4edf-8c62-cefc0c2f197c","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"87a7d861-48e7-4730-aae5-0c0abf30e1b1","name":"Kedougou","alias":"Kedougou","partOf":"Location/5546c26e-a26b-41f7-ad52-12cc80a28c4d","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"faa2e65e-9b4c-4704-ba4c-826a37cdf68b","name":"Salemata","alias":"Salemata","partOf":"Location/5546c26e-a26b-41f7-ad52-12cc80a28c4d","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"97b0e19c-6fd4-4cf4-99ad-690db509a267","name":"Saraya","alias":"Saraya","partOf":"Location/5546c26e-a26b-41f7-ad52-12cc80a28c4d","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"1ccb412f-0d50-464b-8761-a8fde879f6ab","name":"Kolda","alias":"Kolda","partOf":"Location/cb4da666-01dd-43c4-9234-1d04e6dd6934","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"adf113cb-4c36-4cfa-9592-5c459fdfcdad","name":"Medina
+    Yoro Foulah","alias":"Medina Yoro Foulah","partOf":"Location/cb4da666-01dd-43c4-9234-1d04e6dd6934","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"4b909d12-1395-4183-b112-95f5d9a4eb41","name":"Velingara","alias":"Velingara","partOf":"Location/cb4da666-01dd-43c4-9234-1d04e6dd6934","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"d275d395-c7f3-4459-9966-397d6e258b8a","name":"Sedhiou","alias":"Sedhiou","partOf":"Location/2d8356a0-c647-4b40-9e27-2e84fa2c3e94","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"f695a09a-5587-4b5b-ac97-bd2b39d1ba20","name":"Bounkiling","alias":"Bounkiling","partOf":"Location/2d8356a0-c647-4b40-9e27-2e84fa2c3e94","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"13afd65b-1dcd-4c3e-995c-d83de180d8ea","name":"Goudomp","alias":"Goudomp","partOf":"Location/2d8356a0-c647-4b40-9e27-2e84fa2c3e94","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"da96a38c-a640-4995-8a38-b28a820dcccb","name":"Ziguinchor","alias":"Ziguinchor","partOf":"Location/c24f5678-c30a-40f3-aeb0-5bae97384e4a","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"15081079-1b0c-4397-98ea-6fca453aa5e8","name":"Bignona","alias":"Bignona","partOf":"Location/c24f5678-c30a-40f3-aeb0-5bae97384e4a","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"b1756a07-bab2-431a-aaf6-58521d2612d1","name":"Oussouye","alias":"Oussouye","partOf":"Location/c24f5678-c30a-40f3-aeb0-5bae97384e4a","locationType":"ADMIN_STRUCTURE","jurisdictionType":"LOCATION_LEVEL_3","statistics":[]},{"id":"d60e05d4-7781-467c-b4c1-13fd89346845","name":"Bureau
+    Etat Civil Dakar Plateau","alias":"Bureau Etat Civil Dakar Plateau","partOf":"Location/23cdaa09-ae2a-4d28-9d76-a159f43d78c6","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"fa34e640-2ad0-42e8-89da-bc75fb84057b","name":"Bureau
+    Etat Civil Dakar","alias":"Bureau Etat Civil Dakar","partOf":"Location/d0da5397-ccfa-420c-bd95-1fa244bc6f8d","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"5d1949a3-c320-44c5-9a16-aefd275d4978","name":"Bureau
+    Etat Civil Pikine","alias":"Bureau Etat Civil Pikine","partOf":"Location/8ac0323e-8728-4902-b9fe-f696ca659e4f","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"3dd6f7c2-dbae-47d2-b671-8e7125ab459d","name":"Bureau
+    Etat Civil Guediawaye","alias":"Bureau Etat Civil Guediawaye","partOf":"Location/4b631642-95c0-4589-9c8f-051e9205cc74","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"d5ce7a49-3f9a-4822-b14e-f5866f9e4503","name":"Bureau
+    Etat Civil Rufisque","alias":"Bureau Etat Civil Rufisque","partOf":"Location/052d06b3-1693-489b-b540-f11ce967dfea","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"9a024ecf-7c16-4d25-8952-8d696508fd67","name":"Bureau
+    Etat Civil Thies","alias":"Bureau Etat Civil Thies","partOf":"Location/31af8a20-f741-43c1-a265-b147223734b8","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"ba93fd17-8b1b-442c-a200-85c2e1889c38","name":"Bureau
+    Etat Civil Mbour","alias":"Bureau Etat Civil Mbour","partOf":"Location/b572b0d1-3260-4b7c-9358-9c3eaacf1a7b","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"d508b85f-ef88-4f02-a50a-fadf10193f3c","name":"Bureau
+    Etat Civil Tivaouane","alias":"Bureau Etat Civil Tivaouane","partOf":"Location/94b54325-0f9d-4b9f-ae1e-377e1af03ea6","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"be78ab84-439b-4c2c-bfb6-85dab39b10f9","name":"Bureau
+    Etat Civil Diourbel","alias":"Bureau Etat Civil Diourbel","partOf":"Location/8a037208-8ca8-4b5d-bcd7-77c02bd69e2b","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"35c8923c-5f3d-4f47-b3b6-e3f03c9ab023","name":"Bureau
+    Etat Civil Bambey","alias":"Bureau Etat Civil Bambey","partOf":"Location/4e7f02bb-7973-4445-ac3d-555e0b39b5f7","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"f6845201-4815-411d-ad6e-0ae958967add","name":"Bureau
+    Etat Civil Mbacke","alias":"Bureau Etat Civil Mbacke","partOf":"Location/7be5b275-25aa-49ec-a909-4109888a56cd","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"2c8f5d14-9b3b-425e-891f-1403fe3f935d","name":"Bureau
+    Etat Civil Fatick","alias":"Bureau Etat Civil Fatick","partOf":"Location/4ff4395e-d741-444a-a7d3-6c2dc120aca7","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"89e23924-80a6-427f-93a8-0054e8ec7c4b","name":"Bureau
+    Etat Civil Foundiougne","alias":"Bureau Etat Civil Foundiougne","partOf":"Location/b16a945b-0f12-4a48-8e25-36bf2ebaada0","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"b73ff94e-9d1a-4f4e-8a73-de36b25f809c","name":"Bureau
+    Etat Civil Gossas","alias":"Bureau Etat Civil Gossas","partOf":"Location/eb69a602-a903-49c1-bc31-6f2df7c1060b","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"efd2d039-ed31-48cd-9ba7-a3da6b951012","name":"Bureau
+    Etat Civil Kaolack","alias":"Bureau Etat Civil Kaolack","partOf":"Location/2f41fa6e-90e4-4959-ad3f-ebf7c12b56c4","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"82ed95fd-5bb3-49cb-9443-6de9a4bdc122","name":"Bureau
+    Etat Civil Guinguineo","alias":"Bureau Etat Civil Guinguineo","partOf":"Location/513681c4-7ec0-4149-ad5e-4b54f9bfea80","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"3a2ef607-5e4c-41c8-ae6a-1164d691cd34","name":"Bureau
+    Etat Civil Nioro du Rip","alias":"Bureau Etat Civil Nioro du Rip","partOf":"Location/d80a59ab-52b6-4f33-9912-06ca8b91166d","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"539383c0-ee8c-4248-bd8c-c60989fa4fe3","name":"Bureau
+    Etat Civil Kaffrine","alias":"Bureau Etat Civil Kaffrine","partOf":"Location/30e22273-56a5-4179-9d73-9022fb6a018f","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"49465ab4-c18c-45fe-828c-136be0494840","name":"Bureau
+    Etat Civil Birkilane","alias":"Bureau Etat Civil Birkilane","partOf":"Location/b5ef609f-c92a-4407-8469-8cc43f2dc9ec","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"bb386e04-da1c-4cfe-b63d-3b84f3c3d7d4","name":"Bureau
+    Etat Civil Koungheul","alias":"Bureau Etat Civil Koungheul","partOf":"Location/f976816a-70d2-4d63-99b4-247b7fa2c15a","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"b6e5a4b5-fbfb-4787-b4c8-ffb57a7bd56d","name":"Bureau
+    Etat Civil Malem-Hodar","alias":"Bureau Etat Civil Malem-Hodar","partOf":"Location/c266a633-f579-470e-8ad7-2f08f669f5ea","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"d2036312-633c-4cff-8017-d03724fd0ad7","name":"Bureau
+    Etat Civil Louga","alias":"Bureau Etat Civil Louga","partOf":"Location/fc16f58a-bad1-4a1a-838c-fa3986686a55","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"1b2a3c51-f248-4095-b152-ec08e6af5add","name":"Bureau
+    Etat Civil Kebemer","alias":"Bureau Etat Civil Kebemer","partOf":"Location/6b407871-c345-43c1-81ce-adf21f92e3af","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"b72acf32-a7b6-41af-848e-5981e84b3d5a","name":"Bureau
+    Etat Civil Linguere","alias":"Bureau Etat Civil Linguere","partOf":"Location/3394d084-74f6-49f4-a16b-65c45dd9daf8","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"51e4bd8f-5cca-4750-9959-dd8e4a8d3981","name":"Bureau
+    Etat Civil Saint-Louis","alias":"Bureau Etat Civil Saint-Louis","partOf":"Location/c210f414-7382-479e-9a03-465a61431220","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"0742008c-7b7f-4bfa-9747-a31a64edf8a9","name":"Bureau
+    Etat Civil Dagana","alias":"Bureau Etat Civil Dagana","partOf":"Location/e4cc7400-83b6-47b2-909c-b9e512965367","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"dc02c97d-a7ac-47ae-b04f-b863b73ab39e","name":"Bureau
+    Etat Civil Podor","alias":"Bureau Etat Civil Podor","partOf":"Location/cb6d919c-f8f7-4a07-a3cd-69f1ab76a6a1","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"3127a212-3e9d-464f-90e5-a9845a87be03","name":"Bureau
+    Etat Civil Matam","alias":"Bureau Etat Civil Matam","partOf":"Location/2ea448ea-f9bb-46a8-af5a-639771f75e6f","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"aa92124b-8377-45d8-867e-7b799a94497f","name":"Bureau
+    Etat Civil Kanel","alias":"Bureau Etat Civil Kanel","partOf":"Location/f02a0435-32c8-40c0-acb5-435ecf98dd71","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"45fada0d-bdc4-44d2-8913-eacdf2149195","name":"Bureau
+    Etat Civil Ranerou","alias":"Bureau Etat Civil Ranerou","partOf":"Location/ced957d0-e89c-4b2c-ae78-4d9169ce7630","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"df987a97-88a6-4002-955f-88e2747f67db","name":"Bureau
+    Etat Civil Tambacounda","alias":"Bureau Etat Civil Tambacounda","partOf":"Location/6fc8c1a8-c580-4466-89a9-0ef8b9784774","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"51c2196a-d4c1-4881-9867-eb12124e9448","name":"Bureau
+    Etat Civil Bakel","alias":"Bureau Etat Civil Bakel","partOf":"Location/3c51978e-9071-430c-8282-52691e176aad","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"44a5e834-86f6-482d-bd82-3708d39965f1","name":"Bureau
+    Etat Civil Goudiry","alias":"Bureau Etat Civil Goudiry","partOf":"Location/77de61f6-1aee-4f84-b824-fa220e085af9","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"0e6c9473-9509-4c3a-9a13-37b5a345efc6","name":"Bureau
+    Etat Civil Koumpentoum","alias":"Bureau Etat Civil Koumpentoum","partOf":"Location/b459e534-ff4e-46c2-8144-584838ac7990","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"9a57bde6-8513-4b91-ac3e-ffe1f60172de","name":"Bureau
+    Etat Civil Kedougou","alias":"Bureau Etat Civil Kedougou","partOf":"Location/87a7d861-48e7-4730-aae5-0c0abf30e1b1","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"8f60ff80-83d4-41cc-a46f-951bddc96b14","name":"Bureau
+    Etat Civil Salemata","alias":"Bureau Etat Civil Salemata","partOf":"Location/faa2e65e-9b4c-4704-ba4c-826a37cdf68b","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"e06bad1a-6e2f-42ae-b540-23fe370a7efc","name":"Bureau
+    Etat Civil Saraya","alias":"Bureau Etat Civil Saraya","partOf":"Location/97b0e19c-6fd4-4cf4-99ad-690db509a267","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"8165f3ee-179a-4c71-bbdf-fd2e0cd6f5ed","name":"Bureau
+    Etat Civil Kolda","alias":"Bureau Etat Civil Kolda","partOf":"Location/1ccb412f-0d50-464b-8761-a8fde879f6ab","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"2fcf1fef-c618-4560-a38c-262595e07d40","name":"Bureau
+    Etat Civil Medina Yoro Foulah","alias":"Bureau Etat Civil Medina Yoro Foulah","partOf":"Location/adf113cb-4c36-4cfa-9592-5c459fdfcdad","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"c03923f6-d141-4918-a8a6-7da631d07dc4","name":"Bureau
+    Etat Civil Velingara","alias":"Bureau Etat Civil Velingara","partOf":"Location/4b909d12-1395-4183-b112-95f5d9a4eb41","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"fabf9c79-3bc3-4d41-83aa-de3aa85d2c42","name":"Bureau
+    Etat Civil Sedhiou","alias":"Bureau Etat Civil Sedhiou","partOf":"Location/d275d395-c7f3-4459-9966-397d6e258b8a","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"cbe7c5de-6347-46e3-be09-6cc4a8d7d0fd","name":"Bureau
+    Etat Civil Bounkiling","alias":"Bureau Etat Civil Bounkiling","partOf":"Location/f695a09a-5587-4b5b-ac97-bd2b39d1ba20","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"a1e518a4-8752-43d7-9b6b-57d323bf8391","name":"Bureau
+    Etat Civil Goudomp","alias":"Bureau Etat Civil Goudomp","partOf":"Location/13afd65b-1dcd-4c3e-995c-d83de180d8ea","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"be4f5d86-781a-40f0-a394-bcf9122eb317","name":"Bureau
+    Etat Civil Ziguinchor","alias":"Bureau Etat Civil Ziguinchor","partOf":"Location/da96a38c-a640-4995-8a38-b28a820dcccb","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"e6220ad9-c69e-448a-815c-1edf198b9113","name":"Bureau
+    Etat Civil Bignona","alias":"Bureau Etat Civil Bignona","partOf":"Location/15081079-1b0c-4397-98ea-6fca453aa5e8","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"5c27d831-8d12-4f39-b036-06068c2a3984","name":"Bureau
+    Etat Civil Oussouye","alias":"Bureau Etat Civil Oussouye","partOf":"Location/b1756a07-bab2-431a-aaf6-58521d2612d1","locationType":"CRVS_OFFICE","jurisdictionType":"","statistics":[]},{"id":"ff2e83dc-5d0b-4d3d-a903-6dd4839a2697","name":"Hopital
+    Principal de Dakar","alias":"Hopital Principal de Dakar","partOf":"Location/23cdaa09-ae2a-4d28-9d76-a159f43d78c6","locationType":"HEALTH_FACILITY","jurisdictionType":"","statistics":[]},{"id":"ee0fcefc-bfb9-4204-9eef-a11169188c9c","name":"Hopital
+    Aristide Le Dantec","alias":"Hopital Aristide Le Dantec","partOf":"Location/23cdaa09-ae2a-4d28-9d76-a159f43d78c6","locationType":"HEALTH_FACILITY","jurisdictionType":"","statistics":[]},{"id":"b4ce4f95-ffda-4acf-ad58-bbc7a2a4af9b","name":"Maternite
+    Roi Baudouin Guediawaye","alias":"Maternite Roi Baudouin Guediawaye","partOf":"Location/23cdaa09-ae2a-4d28-9d76-a159f43d78c6","locationType":"HEALTH_FACILITY","jurisdictionType":"","statistics":[]}]'
+  roles.json: '[{"id":"FIELD_AGENT","label":{"defaultMessage":"Field Agent","description":"Name
+    for user role Field Agent","id":"userRole.fieldAgent"},"scopes":["record.declare-birth","record.declare-death","record.declare-marriage","record.declaration-submit-incomplete","record.declaration-submit-for-review","search.birth","search.death","search.marriage","search[event=birth,access=all]","search[event=death,access=my-jurisdiction]","search[event=tennis-club-membership,access=all]","record.create[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.notify[event=birth|death|tennis-club-membership]"]},{"id":"POLICE_OFFICER","label":{"defaultMessage":"Police
+    Officer","description":"Name for user role Police Officer","id":"userRole.policeOfficer"},"scopes":["record.declare-birth","record.declare-death","record.declare-marriage","record.declaration-submit-incomplete","record.declaration-submit-for-review","search.birth","search.death","search.marriage","search[event=birth,access=all]","search[event=death,access=all]","search[event=tennis-club-membership,access=all]","record.create[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.notify[event=birth|death|tennis-club-membership]"]},{"id":"HOSPITAL_CLERK","label":{"defaultMessage":"Hospital
+    Clerk","description":"Name for user role Hospital Clerk","id":"userRole.hospitalClerk"},"scopes":["record.declare-birth","record.declare-death","record.declare-marriage","record.declaration-submit-incomplete","record.declaration-submit-for-review","search.birth","search.death","search.marriage","search[event=birth,access=all]","search[event=death,access=all]","search[event=tennis-club-membership,access=all]","record.create[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.notify[event=birth|death|tennis-club-membership]","record.registered.print-certified-copies[event=tennis-club-membership,templates=v2.tennis-club-membership-certificate-alpha]"]},{"id":"HEALTHCARE_WORKER","label":{"defaultMessage":"Healthcare
+    Worker","description":"Name for user role Healthcare Worker","id":"userRole.healthcareWorker"},"scopes":["record.declare-birth","record.declare-death","record.declare-marriage","record.declaration-submit-incomplete","record.declaration-submit-for-review","search.birth","search.death","search.marriage","search[event=birth,access=all]","search[event=death,access=all]","search[event=tennis-club-membership,access=all]","record.create[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.notify[event=birth|death|tennis-club-membership]"]},{"id":"COMMUNITY_LEADER","label":{"defaultMessage":"Community
+    Leader","description":"Name for user role Community Leader","id":"userRole.communityLeader"},"scopes":["record.declare-birth","record.declare-death","record.declare-marriage","record.declaration-submit-incomplete","record.declaration-submit-for-review","record.registration-print\u0026issue-certified-copies","search.birth","search.death","search.marriage","user.read:only-my-audit","search[event=birth,access=all]","search[event=death,access=all]","search[event=tennis-club-membership,access=all]","record.create[event=birth|death|tennis-club-membership]","record.read[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.notify[event=birth|death|tennis-club-membership]","record.registered.print-certified-copies[event=birth|death|tennis-club-membership]"]},{"id":"REGISTRATION_AGENT","label":{"defaultMessage":"Registration
+    Agent","description":"Name for user role Registration Agent","id":"userRole.registrationAgent"},"scopes":["record.read","record.declare-birth","record.declare-death","record.declare-marriage","record.declaration-edit","record.declaration-submit-for-approval","record.declaration-submit-for-updates","record.review-duplicates","record.declaration-archive","record.declaration-reinstate","record.registration-request-correction","record.registration-print\u0026issue-certified-copies","performance.read","performance.read-dashboards","organisation.read-locations:my-office","user.read:only-my-audit","search.birth","search.death","search.marriage","search[event=birth,access=all]","search[event=death,access=all]","search[event=tennis-club-membership,access=all]","record.create[event=birth|death|tennis-club-membership]","record.read[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.declared.validate[event=birth|death|tennis-club-membership]","record.declared.reject[event=birth|death|tennis-club-membership]","record.declared.archive[event=birth|death|tennis-club-membership]","record.declared.review-duplicates[event=birth|death|tennis-club-membership]","record.registered.print-certified-copies[event=birth|death|tennis-club-membership]","record.registered.request-correction[event=birth|death|tennis-club-membership]"]},{"id":"LOCAL_REGISTRAR","label":{"defaultMessage":"Local
+    Registrar","description":"Name for user role Local Registrar","id":"userRole.localRegistrar"},"scopes":["record.read","record.declare-birth","record.declare-death","record.declare-marriage","record.declaration-edit","record.declaration-submit-for-updates","record.review-duplicates","record.declaration-archive","record.declaration-reinstate","record.register","record.registration-correct","record.unassign-others","record.registration-print\u0026issue-certified-copies","record.confirm-registration","record.reject-registration","performance.read","performance.read-dashboards","profile.electronic-signature","user.read:only-my-audit","organisation.read-locations:my-office","search.birth","search.death","search.marriage","search[event=birth,access=all]","search[event=death,access=all]","search[event=tennis-club-membership,access=all]","record.create[event=birth|death|tennis-club-membership]","record.read[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.declared.reject[event=birth|death|tennis-club-membership]","record.declared.archive[event=birth|death|tennis-club-membership]","record.declared.review-duplicates[event=birth|death|tennis-club-membership]","record.register[event=birth|death|tennis-club-membership]","record.registered.print-certified-copies[event=birth|death|tennis-club-membership]","record.registered.correct[event=birth|death|tennis-club-membership]","record.unassign-others[event=birth|death|tennis-club-membership]"]},{"id":"LOCAL_SYSTEM_ADMIN","label":{"defaultMessage":"Local
+    System Admin","description":"Name for user role Local System Admin","id":"userRole.localSystemAdmin"},"scopes":["user.read:my-office","user.create:my-jurisdiction","user.update:my-jurisdiction","user.create[role=FIELD_AGENT|POLICE_OFFICER|HOSPITAL_CLERK|HEALTHCARE_WORKER|COMMUNITY_LEADER|REGISTRATION_AGENT|LOCAL_REGISTRAR]","user.edit[role=FIELD_AGENT|POLICE_OFFICER|HOSPITAL_CLERK|HEALTHCARE_WORKER|COMMUNITY_LEADER|REGISTRATION_AGENT|LOCAL_REGISTRAR]","organisation.read-locations:my-jurisdiction","performance.read","performance.read-dashboards","performance.vital-statistics-export"]},{"id":"NATIONAL_SYSTEM_ADMIN","label":{"defaultMessage":"National
+    System Admin","description":"Name for user role National System Admin","id":"userRole.nationalSystemAdmin"},"scopes":["user.create:all","user.create[role=FIELD_AGENT|POLICE_OFFICER|HOSPITAL_CLERK|HEALTHCARE_WORKER|COMMUNITY_LEADER|REGISTRATION_AGENT|LOCAL_REGISTRAR|NATIONAL_REGISTRAR|LOCAL_SYSTEM_ADMIN|NATIONAL_SYSTEM_ADMIN|PERFORMANCE_MANAGER]","user.edit[role=FIELD_AGENT|POLICE_OFFICER|HOSPITAL_CLERK|HEALTHCARE_WORKER|COMMUNITY_LEADER|REGISTRATION_AGENT|LOCAL_REGISTRAR|NATIONAL_REGISTRAR|LOCAL_SYSTEM_ADMIN|NATIONAL_SYSTEM_ADMIN|PERFORMANCE_MANAGER]","user.read:all","user.update:all","organisation.read-locations:all","performance.read","performance.read-dashboards","performance.vital-statistics-export","record.reindex","config.update:all"]},{"id":"PERFORMANCE_MANAGER","label":{"defaultMessage":"Performance
+    Manager","description":"Name for user role Performance Manager","id":"userRole.performanceManager"},"scopes":["performance.read","performance.read-dashboards","performance.vital-statistics-export","organisation.read-locations:all"]},{"id":"NATIONAL_REGISTRAR","label":{"defaultMessage":"National
+    Registrar","description":"Name for user role National Registrar","id":"userRole.nationalRegistrar"},"scopes":["record.read","record.declare-birth","record.declare-death","record.declare-marriage","record.declaration-submit-for-updates","record.review-duplicates","record.declaration-archive","record.declaration-reinstate","record.register","record.registration-correct","record.unassign-others","record.registration-print\u0026issue-certified-copies","record.confirm-registration","record.reject-registration","performance.read","performance.read-dashboards","performance.vital-statistics-export","user.read:only-my-audit","profile.electronic-signature","organisation.read-locations:my-office","user.read:my-office","search.birth","search.death","search.marriage","search[event=birth,access=all]","search[event=death,access=all]","search[event=tennis-club-membership,access=all]","record.create[event=birth|death|tennis-club-membership]","record.read[event=birth|death|tennis-club-membership]","record.declare[event=birth|death|tennis-club-membership]","record.declared.reject[event=birth|death|tennis-club-membership]","record.declared.archive[event=birth|death|tennis-club-membership]","record.declared.review-duplicates[event=birth|death|tennis-club-membership]","record.register[event=birth|death|tennis-club-membership]","record.registered.print-certified-copies[event=birth|death|tennis-club-membership]","record.registered.correct[event=birth|death|tennis-club-membership]","record.unassign-others[event=birth|death|tennis-club-membership]"]}]'
 kind: ConfigMap
 metadata:
-  annotations:
-    iun.sn/mvp-mode: mock
-    iun.sn/note: CM live rapatrie (drift) + V2_EVENTS deplace dans FEATURES (fix boucle redirectToWorkqueue)
-    iun.sn/reconciled-from-live: '2026-06-12'
-    iun.sn/sprint-3-todo: fork farajaland repository and supply real form schemas + handlebars templates
-  labels:
-    app.kubernetes.io/component: opencrvs
-    app.kubernetes.io/name: countryconfig
   name: countryconfig-sn-data
   namespace: iun-opencrvs-dev
-
 ---
 apiVersion: v1
 kind: Service
 metadata:
+  labels:
+    app.kubernetes.io/component: opencrvs
+    app.kubernetes.io/name: countryconfig
   name: countryconfig
   namespace: iun-opencrvs-dev
-  labels:
-    app.kubernetes.io/name: countryconfig
-    app.kubernetes.io/component: opencrvs
 spec:
-  type: ClusterIP
+  clusterIP: 172.30.40.153
+  clusterIPs:
+  - 172.30.40.153
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
   ports:
-    - name: http
-      port: 3040
-      targetPort: 3040
-      protocol: TCP
+  - name: http
+    port: 3040
+    protocol: TCP
+    targetPort: 3040
   selector:
     app.kubernetes.io/name: countryconfig
+  sessionAffinity: None
+  type: ClusterIP
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    iun.sn/image-tag-verified: 2026-06-03 ??? nginx:alpine
+    iun.sn/mvp-mode: mock
+  labels:
+    app.kubernetes.io/component: opencrvs
+    app.kubernetes.io/name: countryconfig
   name: countryconfig
   namespace: iun-opencrvs-dev
-  labels:
-    app.kubernetes.io/name: countryconfig
-    app.kubernetes.io/component: opencrvs
-  annotations:
-    iun.sn/mvp-mode: "mock"
-    iun.sn/image-tag-verified: "2026-06-03 ??? nginx:alpine"
 spec:
+  progressDeadlineSeconds: 600
   replicas: 1
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app.kubernetes.io/name: countryconfig
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
   template:
     metadata:
-      labels:
-        app.kubernetes.io/name: countryconfig
-        app.kubernetes.io/component: opencrvs
       annotations:
         openshift.io/required-scc: iun-anyuid-caps
+      labels:
+        app.kubernetes.io/component: opencrvs
+        app.kubernetes.io/name: countryconfig
     spec:
-      serviceAccountName: default
+      containers:
+      - image: docker.io/nginxinc/nginx-unprivileged:alpine
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 4
+          httpGet:
+            path: /ping
+            port: 3040
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 3
+        name: countryconfig
+        ports:
+        - containerPort: 3040
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 4
+          httpGet:
+            path: /ping
+            port: 3040
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 250m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/nginx/conf.d
+          name: nginx-conf
+          readOnly: true
+      dnsPolicy: ClusterFirst
       imagePullSecrets:
-        - name: docker-hub-creds
+      - name: docker-hub-creds
+      restartPolicy: Always
+      schedulerName: default-scheduler
       securityContext:
+        fsGroup: 101
         runAsNonRoot: true
         runAsUser: 101
-        fsGroup: 101
-      containers:
-        - name: countryconfig
-          image: docker.io/nginxinc/nginx-unprivileged:alpine
-          imagePullPolicy: IfNotPresent
-          ports:
-            - name: http
-              containerPort: 3040
-              protocol: TCP
-          volumeMounts:
-            - name: nginx-conf
-              mountPath: /etc/nginx/conf.d
-              readOnly: true
-          readinessProbe:
-            httpGet:
-              path: /ping
-              port: 3040
-            initialDelaySeconds: 5
-            periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 4
-          livenessProbe:
-            httpGet:
-              path: /ping
-              port: 3040
-            initialDelaySeconds: 15
-            periodSeconds: 20
-            timeoutSeconds: 3
-            failureThreshold: 4
-          resources:
-            requests:
-              cpu: "50m"
-              memory: "64Mi"
-            limits:
-              cpu: "250m"
-              memory: "128Mi"
+      serviceAccount: default
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 30
       volumes:
-        - name: nginx-conf
-          configMap:
-            name: countryconfig-sn-data
-            items:
-              - key: default.conf
-                path: default.conf
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: locations.json
+            path: locations.json
+          - key: default.conf
+            path: default.conf
+          - key: config.json
+            path: config.json
+          - key: birth-cert.svg
+            path: birth-cert.svg
+          - key: roles.json
+            path: roles.json
+          name: countryconfig-sn-data
+        name: nginx-conf
