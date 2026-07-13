@@ -1,0 +1,154 @@
+# ============================================================================
+# 02-elasticsearch.yaml — Elasticsearch 8.16.4 single-node
+# ----------------------------------------------------------------------------
+# Purpose      : full-text search index for OpenCRVS `search` service.
+# Dependencies : ocs-external-storagecluster-ceph-rbd ; SCC iun-anyuid-caps
+#                (ES image hardcoded UID 1000 — PITFALLS #1).
+# Override     : Production = 3 nodes, x-pack.security.enabled=true with TLS,
+#                JVM heap >= 50% of memory limit (PITFALLS #4).
+# Gotchas      :
+#   - PITFALLS #1 — UID 1000.
+#   - PITFALLS #2 — vm.max_map_count >= 262144 is a NODE-level kernel setting
+#     ; the init container only INSPECTS it (info-only) ; Lead must apply a
+#     Tuned operator manifest if WARN appears. NEVER mark this init container
+#     privileged on a multi-tenant cluster.
+#   - PITFALLS #4 — JVM heap (Xmx) must NOT exceed container memory limit /2,
+#     here 2Gi heap vs 4Gi limit.
+#   - x-pack.security.enabled=false is a DEV decision ; prod must use TLS +
+#     auth secrets.
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: elasticsearch
+    app.kubernetes.io/component: infra
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200
+      protocol: TCP
+    - name: transport
+      port: 9300
+      targetPort: 9300
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: elasticsearch
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: elasticsearch
+    app.kubernetes.io/component: infra
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — elasticsearch:8.16.4 OpenCRVS 1.9 supported"
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: elasticsearch
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: elasticsearch
+        app.kubernetes.io/component: infra
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      initContainers:
+        # PITFALLS #2 : info-only check. NOT privileged. NOT setting sysctl.
+        - name: wait-vm-max-map-count
+          image: docker.elastic.co/elasticsearch/elasticsearch:8.16.4
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              VAL=$(sysctl -n vm.max_map_count 2>/dev/null || echo unknown)
+              echo "[init] vm.max_map_count=$VAL (need >=262144)"
+              if [ "$VAL" != "unknown" ] && [ "$VAL" -lt 262144 ] 2>/dev/null; then
+                echo "[init] WARN : vm.max_map_count $VAL < 262144"
+                echo "[init] WARN : ES may crash on boot. Lead should apply a"
+                echo "[init] WARN : Tuned operator manifest node-side. See PITFALLS #2."
+              fi
+              exit 0
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:8.16.4
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9200
+              protocol: TCP
+            - name: transport
+              containerPort: 9300
+              protocol: TCP
+          env:
+            - name: discovery.type
+              value: "single-node"
+            - name: xpack.security.enabled
+              value: "false"
+            - name: ES_JAVA_OPTS
+              value: "-Xms2g -Xmx2g"
+            - name: bootstrap.memory_lock
+              value: "false"
+            - name: ELASTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: elasticsearch-creds
+                  key: elastic-password
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health?local=true
+              port: 9200
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health?local=true
+              port: 9200
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ocs-external-storagecluster-ceph-rbd
+        resources:
+          requests:
+            storage: 10Gi

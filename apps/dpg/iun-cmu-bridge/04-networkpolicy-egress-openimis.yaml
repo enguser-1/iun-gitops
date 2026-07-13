@@ -1,0 +1,29 @@
+# Egress : iun-cmu-bridge -> Hearth mongo (meme ns) + OpenIMIS backend (cross-ns) + DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: iun-cmu-bridge-egress
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: iun-cmu-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: iun-cmu-bridge
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: { matchLabels: { app.kubernetes.io/name: mongo } }
+      ports:
+        - { protocol: TCP, port: 27017 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: iun-openimis-dev }
+          podSelector: { matchLabels: { app.kubernetes.io/name: openimis } }
+      ports:
+        - { protocol: TCP, port: 8000 }
+    - to: []
+      ports:
+        - { protocol: UDP, port: 5353 }
+        - { protocol: TCP, port: 5353 }

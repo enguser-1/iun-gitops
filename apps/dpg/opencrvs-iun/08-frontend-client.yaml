@@ -1,0 +1,98 @@
+# ============================================================================
+# 08-frontend-client.yaml — OpenCRVS client PWA (port 3000)
+# ----------------------------------------------------------------------------
+# Purpose      : React 18 PWA served as static assets. Reads runtime config
+#                from REACT_APP_* env at build time, but a runtime config
+#                JSON is fetched on first load to bind the gateway URL.
+# Dependencies : gateway Ready ; Route iun-civil-dev.
+# Override     : Fallback image docker.io/opencrvs/ocrvs-client:v1.9.13.
+# Gotchas      :
+#   - Service-worker caches index.html for offline use. A hard reload may
+#     be needed after a re-deploy to pick up REACT_APP_API_GATEWAY_URL changes.
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: client
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: client
+    app.kubernetes.io/component: opencrvs
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: client
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: client
+    app.kubernetes.io/component: opencrvs
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — ghcr.io/opencrvs/ocrvs-client:v1.9.13"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: client
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: client
+        app.kubernetes.io/component: opencrvs
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: client
+          image: ghcr.io/opencrvs/ocrvs-client:v1.9.13
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: REACT_APP_API_GATEWAY_URL
+              value: "https://iun-civil-api-dev.apps.origins.heritage.africa"
+            - name: REACT_APP_AUTH_URL
+              value: "https://iun-civil-login-dev.apps.origins.heritage.africa"
+            - name: REACT_APP_COUNTRY_CONFIG_URL
+              value: "https://iun-civil-api-dev.apps.origins.heritage.africa/config"
+            - name: REACT_APP_MINIO_URL
+              value: "https://iun-civil-docs-dev.apps.origins.heritage.africa"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"

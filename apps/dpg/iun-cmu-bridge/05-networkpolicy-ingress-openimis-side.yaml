@@ -1,0 +1,26 @@
+# Ingress cote OpenIMIS : autorise le pod iun-cmu-bridge (ns iun-opencrvs-dev) a
+# joindre l'openimis-backend:8000. Les NP openimis n'autorisent que l'intra-namespace
+# (allow-intra-openimis-ingress) -> sans cette regle, le bridge time-out.
+# (meme pattern que iun-uin-bridge/05-networkpolicy-ingress-mosip-side.yaml)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-from-iun-cmu-bridge
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    iun.sn/dpg: cmu-custom
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: backend
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: iun-opencrvs-dev }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: iun-cmu-bridge }
+      ports:
+        - { protocol: TCP, port: 8000 }

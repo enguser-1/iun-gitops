@@ -1,0 +1,121 @@
+# ============================================================================
+# PostgreSQL OpenIMIS - StatefulSet sur image openimis-pgsql:25.10
+# ============================================================================
+# PIVOT vs CNPG (decision Sprint 2 Week 2 J+0) :
+# - CNPG vanilla postgresql:16.4 ne ship PAS l'extension postgres-json-schema
+#   ni les initdb scripts legacy d'OpenIMIS (qui creent les tables tblUsers,
+#   tblLocations et ~150 autres tables legacy reference par les migrations
+#   Django release 25.10 via RunSQL hardcode).
+# - openimis-pgsql:25.10 (image officielle OpenIMIS, basee sur postgres) ship
+#   l'extension + scripts initdb pre-crees compatibles avec les migrations.
+# - Trade-off : on perd la HA CNPG (1 replica au lieu de 3 + standbys).
+#   Reintroduction CNPG en Sprint 3 quand on aura construit une image CNPG
+#   custom avec postgres-json-schema + initdb scripts.
+#
+# Image cached sur compute01 uniquement (297MB) -> nodeSelector compute01.
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimis-db
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: openimis-db
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: openimis-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: postgres
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      # Image openimis-pgsql:25.10 cached sur compute01 uniquement
+      nodeSelector:
+        kubernetes.io/hostname: compute01.origins.heritage.africa
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: ghcr.io/openimis/openimis-pgsql:25.10
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: openimis-db-app
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "openimis", "-d", "openimis"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "openimis", "-d", "openimis"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            runAsUser: 999
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: openimis
+          app.kubernetes.io/component: postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ocs-external-storagecluster-ceph-rbd
+        resources:
+          requests:
+            storage: 20Gi

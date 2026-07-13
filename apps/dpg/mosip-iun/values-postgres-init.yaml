@@ -1,0 +1,84 @@
+# ============================================================================
+# postgres-init values - MOSIP UIN-only sur CNPG iun-mosip-dev
+# ============================================================================
+# 3 DBs activees (minimum pour UIN generation) :
+#   mosip_master : metadata MOSIP (config, etc.)
+#   mosip_kernel : IUN tracking + idgenerator state
+#   mosip_keymgr : cles + signatures keymanager
+#
+# Pointe sur CNPG primary service mosip-postgres-rw:5432 avec le superuser
+# postgres (password genere et mis a jour via ALTER USER, stocke dans le
+# Secret mosip-postgres-superuser).
+#
+# dml=0 : on charge le DDL (schemas + tables) mais pas le DML (donnees initiales).
+# Acceptable pour MVP UIN-only. Pour MVP IUN complet, passer dml=1.
+# ============================================================================
+replicaCount: 1
+
+image:
+  repository: mosipid/postgres-init
+  pullPolicy: IfNotPresent  # IfNotPresent au lieu de Always (cache si dispo)
+  tag: 1.2.0.2
+
+backoffLimit: 0  # Pas de retry si echec - on veut voir l'erreur direct
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# OCP : run as root (UID 0) requis car l'image MOSIP fait git clone dans cwd
+# (admin-services etc) appartenant a root. SCC iun-anyuid-caps autorise RunAsAny.
+# A retirer Sprint 3+ via rebuild image MOSIP non-root.
+jobAnnotations:
+  openshift.io/required-scc: iun-anyuid-caps
+
+securityContext:
+  runAsUser: 0
+  runAsNonRoot: false
+
+# Common dbuser password (utilise pour creer les users mosip_* non-su)
+dbUserPasswords:
+  dbuserPassword: "default_mosip_dbuser_change_in_prod"
+
+# Liste des DBs MOSIP a initialiser
+databases:
+  mosip_master:
+    enabled: true
+    host: mosip-postgres-rw
+    port: "5432"
+    su:
+      user: postgres
+      secret:
+        name: mosip-postgres-superuser
+        key: password
+    dml: 0
+
+  mosip_kernel:
+    enabled: true
+    host: mosip-postgres-rw
+    port: "5432"
+    su:
+      user: postgres
+      secret:
+        name: mosip-postgres-superuser
+        key: password
+    dml: 0
+
+  mosip_keymgr:
+    enabled: true
+    host: mosip-postgres-rw
+    port: "5432"
+    su:
+      user: postgres
+      secret:
+        name: mosip-postgres-superuser
+        key: password
+    dml: 0
+
+  # Audit DB - utile mais pas critique pour UIN-only MVP. A activer si besoin.
+  mosip_audit:
+    enabled: false

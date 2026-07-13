@@ -250,7 +250,7 @@ Content-Type: application/json
 ```json
 {
   "response": {
-    "uin": "SN-XXXX-XXXX-X",   // 9 chiffres + Verhoeff, format affichage cf. [[project-iun-status]]
+    "uin": "SN-XXXX-XXXX-XX",  // 10 chiffres + Verhoeff (ADR-R01 2026-05-25), format affichage cf. [[project-iun-status]]
     "status": "ACTIVATED"
   }
 }

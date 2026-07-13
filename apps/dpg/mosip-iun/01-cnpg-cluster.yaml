@@ -1,0 +1,67 @@
+# ============================================================================
+# CNPG Cluster Postgres pour MOSIP (Sprint 3 Phase 1 - iun-mosip-dev)
+# ============================================================================
+# Adaptation du manifest gitops/apps/dpg/mosip/manifests/cnpg-mosip-cluster.yaml
+# pour le namespace iun-mosip-dev (Sprint 2 standard, prefix iun-).
+#
+# IMPORTANT : MOSIP n'utilise PAS postgres-json-schema (contrairement a OpenIMIS).
+# Les seules extensions necessaires sont pgcrypto + uuid-ossp (standards Postgres),
+# crees via postInitSQL. Le pivot OpenIMIS Week 2 (image custom requise) ne
+# s'applique PAS ici - on peut utiliser l'image CNPG vanilla 16.4-bookworm.
+#
+# 3 instances HA (1 primary + 2 standbys), 10Gi par instance sur ODF Ceph RBD.
+# ============================================================================
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: mosip-postgres
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+    iun.sn/component: db-backend
+  annotations:
+    iun.sn/tor-ref: "§4.1, §5.5 (storage layer)"
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4-bookworm
+
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      work_mem: "16MB"
+      maintenance_work_mem: "64MB"
+      effective_cache_size: "1GB"
+      log_min_duration_statement: "1000"
+    pg_hba:
+      - host all all all md5
+
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      secret:
+        name: mosip-postgres-app
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        - CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+  storage:
+    storageClass: ocs-external-storagecluster-ceph-rbd
+    size: 10Gi
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+
+  monitoring:
+    enablePodMonitor: true

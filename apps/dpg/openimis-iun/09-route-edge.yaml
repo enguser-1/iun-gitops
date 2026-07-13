@@ -1,0 +1,31 @@
+# ============================================================================
+# Route OCP edge TLS - frontend OpenIMIS
+# ============================================================================
+# Termination edge : TLS termine au router OCP (cert wildcard cluster).
+# Trafic backend interne HTTP -> targetPort http (8080 cote container, port 80
+# cote service).
+#
+# Hostname align avec backend env HOSTS / CSRF_TRUSTED_ORIGINS / SITE_URL.
+# ============================================================================
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: openimis-frontend
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: frontend
+  annotations:
+    haproxy.router.openshift.io/timeout: "60s"
+spec:
+  host: openimis-iun-dev.apps.origins.heritage.africa
+  to:
+    kind: Service
+    name: openimis-frontend
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

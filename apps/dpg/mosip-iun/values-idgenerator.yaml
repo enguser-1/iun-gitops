@@ -1,0 +1,58 @@
+# ============================================================================
+# values idgenerator - chart mosip/idgenerator 12.0.2 - iun-mosip-dev
+# ============================================================================
+# MVP UIN-only : ce module genere les UINs Senegal length=10 avec algorithme
+# Verhoeff (cf. ADR-R01 + architecture/research/verhoeff/).
+#
+# PRE-REQUIS RUNTIME :
+#   - mosip_kernel DB (cree par postgres-init fix #M2) avec table uin_*
+#   - config-server alive servant properties kernel (overrides Senegal)
+#   - softhsm-kernel pour signing seeds Verhoeff (vraiment requis ?)
+#
+# Le chart par defaut tente probablement de connecter a keymanager:8088. Si
+# idgenerator est resilient (catch + retry), il bootera quand meme et on aura
+# le UIN endpoint expose. Sinon on stubera keymanager Service avec un pod
+# 200-OK basique.
+# ============================================================================
+
+image:
+  pullPolicy: IfNotPresent
+
+# -- Postgres : DB mosip_kernel (init via postgres-init #M2 fix)
+postgres:
+  enabled: true
+  external: true
+  host: mosip-postgres-rw.iun-mosip-dev.svc.cluster.local
+  port: 5432
+  existingSecret: mosip-postgres-app
+  database: mosip_kernel
+
+# -- Spring Cloud Config server
+springCloudConfig:
+  enabled: true
+  uri: "http://config-server.iun-mosip-dev.svc.cluster.local:51000/config"
+  label: master
+  profile: default
+
+# -- Resources sandbox dev
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+# -- Override JVM heap (eviter OOMKilled comme keymanager)
+extraEnv:
+  - name: JDK_JAVA_OPTIONS
+    value: "-Xms512M -Xmx1024M"
+
+springServicePort: 8080
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false

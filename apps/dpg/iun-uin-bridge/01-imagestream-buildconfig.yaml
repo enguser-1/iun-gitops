@@ -1,0 +1,30 @@
+# iun-uin-bridge - build interne (pattern iun-uin-service)
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: iun-uin-bridge
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: uin-custom
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: iun-uin-bridge
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: uin-custom
+spec:
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: iun-uin-bridge:latest

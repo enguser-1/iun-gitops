@@ -1,0 +1,24 @@
+# Egress cross-namespace : bridge -> iun-uin-service (iun-mosip-dev:8080)
+# (mongo + hearth couverts par allow-intra-namespace-egress ; DNS par allow-dns)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-bridge-to-mosip-uin
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: uin-custom
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: iun-uin-bridge
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: iun-mosip-dev
+      ports:
+        - protocol: TCP
+          port: 8080

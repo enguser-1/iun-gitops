@@ -64,12 +64,18 @@ spec:
       # si le cookie a deja ete ecrit par un container precedent avec un autre
       # UID (random SCC), un chmod simple par 999 echoue (EPERM).
       #
-      # Strategie : init container en UID 0 + CAP CHOWN/FOWNER/DAC_OVERRIDE
-      # (anyuid SCC deja accorde via openshift.io/required-scc) qui :
+      # Strategie : init container en UID 0 (SCC anyuid deja accordee via
+      # openshift.io/required-scc) qui :
       #   1. inspecte /var/lib/rabbitmq/.erlang.cookie
       #   2. si mode != 600/400 -> supprime
       #   3. si absent -> regenere 48 hex chars depuis /dev/urandom (umask 077)
       #   4. force chown 999:999 + chmod 600
+      #
+      # ATTENTION : SCC anyuid INTERDIT 'capabilities.add' (allowedCapabilities
+      # est vide). Le bloc 'capabilities' est donc volontairement absent : root
+      # avec les caps Linux par defaut (DAC_OVERRIDE, CHOWN, FOWNER, ...) peut
+      # deja faire chmod/chown sans cap supplementaire. OCP drop MKNOD/SYS_CHROOT
+      # par defaut, on ne re-add rien.
       # Cf. https://www.rabbitmq.com/clustering.html#erlang-cookie
       initContainers:
         - name: cookie-fix
@@ -108,9 +114,6 @@ spec:
             runAsUser: 0
             runAsNonRoot: false
             allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-              add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq

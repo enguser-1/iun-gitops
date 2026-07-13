@@ -1,0 +1,134 @@
+# ============================================================================
+# iun-civil-registry Deployment
+# ============================================================================
+# 2 replicas pour HA. ImageStream trigger pour redeploy auto sur new build.
+# Connecte sur MongoDB existant (Service `mongo` in same NS), via le Secret
+# `mongodb-creds` deja en place (cle `app-username` / `app-password`).
+# Compatible SCC restricted-v2.
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iun-civil-registry
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: iun-civil-registry
+    app.kubernetes.io/instance: iun-civil-registry
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: civil-registry-custom
+    iun.sn/component: civil-registry
+  annotations:
+    image.openshift.io/triggers: |
+      [{"from":{"kind":"ImageStreamTag","name":"iun-civil-registry:latest","namespace":"iun-opencrvs-dev"},"fieldPath":"spec.template.spec.containers[?(@.name==\"iun-civil-registry\")].image","pause":"false"}]
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iun-civil-registry
+      app.kubernetes.io/instance: iun-civil-registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iun-civil-registry
+        app.kubernetes.io/instance: iun-civil-registry
+        app.kubernetes.io/part-of: iun-platform
+        iun.sn/dpg: civil-registry-custom
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: iun-civil-registry
+      containers:
+        - name: iun-civil-registry
+          image: image-registry.openshift-image-registry.svc:5000/iun-opencrvs-dev/iun-civil-registry:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: iun-civil-registry-config
+          env:
+            - name: MONGO_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-creds
+                  key: app-username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-creds
+                  key: app-password
+            # IUN_UIN_SERVICE_AUTH (optional, Sprint 3 ready - empty for MVP)
+            - name: IUN_UIN_SERVICE_AUTH
+              value: ""
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24   # ~2 min cold start tolerance
+          readinessProbe:
+            httpGet:
+              path: /actuator/readiness
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+---
+# ----------------------------------------------------------------------------
+# ConfigMap iun-civil-registry-config
+# ----------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iun-civil-registry-config
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: iun-civil-registry
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: civil-registry-custom
+data:
+  # MongoDB
+  MONGO_HOST: "mongo"
+  MONGO_PORT: "27017"
+  MONGO_DB: "civil_registry_iun"
+  MONGO_AUTH_DB: "civil_registry_iun"
+  # iun-uin-service (cross-ns)
+  IUN_UIN_SERVICE_URL: "http://iun-uin-service.iun-mosip-dev.svc.cluster.local:8080"
+  IUN_UIN_SERVICE_TIMEOUT: "10"
+  IUN_UIN_SERVICE_RETRIES: "3"

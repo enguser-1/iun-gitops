@@ -1,0 +1,52 @@
+# iun-uin-bridge - pont OpenCRVS -> iun-uin-service (decision D-shim)
+# DRY_RUN=true par defaut : observer les logs avant d'activer (oc set env DRY_RUN=false)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iun-uin-bridge
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: iun-uin-bridge
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: uin-custom
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iun-uin-bridge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iun-uin-bridge
+        app.kubernetes.io/part-of: iun-platform
+    spec:
+      containers:
+        - name: bridge
+          image: image-registry.openshift-image-registry.svc:5000/iun-opencrvs-dev/iun-uin-bridge:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: MONGO_APP_USER
+              valueFrom: { secretKeyRef: { name: mongodb-creds, key: app-username } }
+            - name: MONGO_APP_PASSWORD
+              valueFrom: { secretKeyRef: { name: mongodb-creds, key: app-password } }
+            - name: MONGO_URL
+              value: "mongodb://$(MONGO_APP_USER):$(MONGO_APP_PASSWORD)@mongo-headless:27017/hearth-dev"
+            - name: HEARTH_URL
+              value: "http://hearth:3447"
+            - name: UIN_SERVICE_URL
+              value: "http://iun-uin-service.iun-mosip-dev.svc.cluster.local:8080"
+            - name: POLL_INTERVAL_S
+              value: "30"
+            - name: DRY_RUN
+              value: "true"
+          readinessProbe:
+            httpGet: { path: /ping, port: 8080 }
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /ping, port: 8080 }
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 250m, memory: 256Mi }

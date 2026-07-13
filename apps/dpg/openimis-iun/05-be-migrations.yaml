@@ -1,0 +1,101 @@
+# ============================================================================
+# Job openimis-be-migrations - python manage.py migrate (one-shot)
+# ============================================================================
+# Entrypoint officiel : `init` -> migrate (+ load demo si DEMO_DATASET=true,
+# qu'on force a false). Run once par release - relancer via
+# `oc delete job openimis-be-migrations -n iun-openimis-dev` puis re-apply.
+#
+# envFrom :
+#   - openimis-db-app   (DB_HOST/PORT/NAME/USER/PASSWORD)
+#   - openimis-broker   (CELERY_BROKER_URL) - utile si migrations creent tasks
+#   - openimis-redis    (CACHE_URL) - utile pour CACHE_BACKEND
+#   - openimis-django   (SECRET_KEY)
+# env inline :
+#   - MODE=PROD
+#   - DJANGO_LOG_HANDLER=console + DJANGO_DB_LOG_HANDLER=console (PITFALLS §1)
+#   - DEMO_DATASET=false
+#   - SITE_ROOT=api
+# ============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openimis-be-migrations
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: migrations
+spec:
+  # backoffLimit: 0 + restartPolicy: Never = 1 seul pod, conserve apres echec
+  # pour permettre `oc logs`. Une fois la migration debugged, on peut remonter
+  # backoffLimit a 3 et restartPolicy a OnFailure si on veut de la resilience.
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: migrations
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      restartPolicy: Never
+      # MVP : openimis-be:25.10 en cache sur compute01/02 (cf. 06-backend)
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - compute01.origins.heritage.africa
+                      - compute02.origins.heritage.africa
+      containers:
+        - name: migrate
+          image: ghcr.io/openimis/openimis-be:25.10
+          imagePullPolicy: IfNotPresent
+          args: ["init"]
+          envFrom:
+            - secretRef:
+                name: openimis-db-app
+            - secretRef:
+                name: openimis-broker
+            - secretRef:
+                name: openimis-redis
+            - secretRef:
+                name: openimis-django
+          env:
+            - name: MODE
+              value: PROD
+            - name: DJANGO_LOG_HANDLER
+              value: console
+            - name: DJANGO_DB_LOG_HANDLER
+              value: console
+            - name: DJANGO_LOG_LEVEL
+              value: INFO
+            - name: DEMO_DATASET
+              value: "false"
+            - name: SITE_ROOT
+              value: api
+            - name: OPENSEARCH_HOSTS
+              value: http://openimis-opensearch:9200
+            # PAS de OPENIMIS_CONF override ni de volumeMount sur openimis.json
+            # Raison : la release 25.10 a des imports en dur entre modules
+            # (api_fhir_r4 -> insuree/policyholder, payroll -> invoice/contribution_plan)
+            # qui forcent le chargement de TOUS les modules pip-installes dans l'image.
+            # Filtrer via openimis.json custom casse l'import chain au boot Django.
+            # On laisse l'image utiliser son openimis.json bundled (cohrent avec les pip deps).
+            # Le filtrage business (UI gating, Route deny patterns) se fera ailleurs.
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      # PAS de volumes openimis-config : on utilise l'openimis.json bundled dans l'image
+      # (cf. commentaire dans le container env block)

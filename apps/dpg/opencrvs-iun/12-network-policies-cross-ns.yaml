@@ -1,0 +1,56 @@
+# ============================================================================
+# 12-network-policies-cross-ns.yaml — egress vers iun-mosip-dev et iun-openimis-dev
+# ----------------------------------------------------------------------------
+# Purpose      : poke holes in the deny-all baseline (Week 1) so that
+#                mosip-api can reach iun-uin-service in iun-mosip-dev, and
+#                so that registration can push FHIR Patient records to
+#                OpenIMIS backend in iun-openimis-dev.
+# Dependencies : NS iun-mosip-dev and iun-openimis-dev exist with the
+#                default OCP 4.16 label kubernetes.io/metadata.name=<ns>.
+# Override     : if iun-uin-service ends up in a different NS, update the
+#                namespaceSelector below.
+# Gotchas      :
+#   - These are ADDITIVE to the Week 1 deny-all+allow-dns+allow-ingress-router
+#     baseline. NetworkPolicies in K8s are union-of-allow ; never override.
+#   - The podSelector {} = all pods in this NS, so this is broad. Tighten
+#     in Sprint 3 by adding `matchLabels: app.kubernetes.io/name: mosip-api`.
+# ============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-mosip-uin
+  namespace: iun-opencrvs-dev
+  labels:
+    iun.sn/policy: cross-ns-egress
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: iun-mosip-dev
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8088
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-openimis-fhir
+  namespace: iun-opencrvs-dev
+  labels:
+    iun.sn/policy: cross-ns-egress
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: iun-openimis-dev
+      ports:
+        - protocol: TCP
+          port: 8000

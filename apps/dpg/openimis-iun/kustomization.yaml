@@ -1,0 +1,54 @@
+# ============================================================================
+# IUN OpenIMIS DEV - Rebuild from scratch (Sprint 2 Week 2)
+# ============================================================================
+# Namespace cible : iun-openimis-dev (NE PAS confondre avec l'ancien
+# openimis-dev hot-patche, qui reste pour comparaison).
+#
+# Bascule GitOps prevue Week 2 J+2 : ce kustomization sera reference par
+# gitops/apps/dpg/openimis-iun/application.yaml (Argo CD). Pour l'instant,
+# les .ps1 dans sprint-2-scripts/week-2-openimis/ appliquent ces manifests
+# en direct via `oc apply --server-side --field-manager=iun-openimis`.
+#
+# Ordre d'application implique par le numero du fichier :
+#   00 -> secrets placeholders (en mode .ps1 : passwords generes runtime)
+#   01 -> CNPG Cluster (postgres)
+#   02 -> Redis
+#   03 -> RabbitMQ
+#   04 -> OpenSearch + Dashboards
+#   05 -> Job migrations (run-once)
+#   06 -> Backend API
+#   07 -> Worker Celery
+#   08 -> Frontend nginx
+#   09 -> Route OCP edge TLS
+# configmaps/ -> openimis.json (modules MVP) + nginx listen 8080
+# ============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: iun-openimis-dev
+commonLabels:
+  app.kubernetes.io/part-of: iun-openimis
+  iun.sn/dpg: openimis
+  iun.sn/environment: dev
+  iun.sn/managed-by: kustomize
+resources:
+  # ConfigMaps
+  - configmaps/nginx-listen-8080.yaml
+  # configmaps/openimis-config.yaml retire post-pivot Week 2 (cf. WEEK-2-CLOSEOUT erratum #1)
+
+  # Secrets : 00-secrets-placeholders.yaml etait un marqueur Week 2 partial.
+  # Apres Vault seed (Sprint 3 ticket #4), on active 00-vault-static-secrets.yaml.
+  # En attendant l'activation, les Secrets OCP sont crees runtime par 01-secrets.ps1.
+  - 00-vault-static-secrets.yaml
+
+  # Stack runtime
+  # 01-postgres-cnpg.yaml retire (pivot Week 2 erratum #2). Utiliser 01-postgres-stateful.yaml a la place.
+  - 01-postgres-stateful.yaml
+  - 02-redis.yaml
+  - 03-rabbitmq.yaml
+  - 04-opensearch.yaml
+  - 05-be-migrations.yaml
+  - 06-backend.yaml
+  - 07-worker.yaml
+  - 08-frontend.yaml
+  - 09-route-edge.yaml
+  - 10-allow-intra-openimis.yaml

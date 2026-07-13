@@ -1,0 +1,79 @@
+# ============================================================================
+# Argo CD Application - iun-openimis-dev
+# ============================================================================
+# Cible : sync gitops/apps/dpg/openimis-iun/ vers le namespace iun-openimis-dev
+# via l'instance ArgoCD iun-argocd/iun-argocd (Week 1 tache 1.4) ET son
+# AppProject iun-platform (Week 1 tache 1.4 partie B).
+#
+# A NE PAS APPLY avant que :
+#   1. Vault Heritage seede les 5 paths iun/openimis/dev/* (cf.
+#      VAULT-TOKEN-REQUEST-IUN.md + push-secrets-to-vault.ps1)
+#   2. VaultStaticSecret CRs (00-vault-static-secrets.yaml) appliques avec
+#      succes (oc get vss -n iun-openimis-dev -> tous SYNCED/HEALTHY/READY)
+#   3. Validation que les Secrets OCP existants (crees runtime par 01-secrets.ps1)
+#      sont rotes/remplaces par VSO sans casser les pods backend/worker
+#
+# Workflow d'activation : voir week-2-openimis/README.md section "Bascule GitOps"
+# ============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: iun-openimis-dev
+  namespace: iun-argocd
+  labels:
+    iun.sn/dpg: openimis
+    iun.sn/environment: dev
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    iun.sn/created-from: sprint-2-week-2-rebuild
+    iun.sn/closeout-ref: architecture/sprint-2/WEEK-2-CLOSEOUT.md
+spec:
+  project: iun-platform
+  source:
+    # TODO Sprint 3 : aligner avec le remote git officiel (cf. decision Lead 2026-05-25)
+    # Repo actuel = enguser-1/iun-gitops (decision interim Week 1)
+    repoURL: https://github.com/enguser-1/iun-gitops.git
+    targetRevision: HEAD
+    path: apps/dpg/openimis-iun
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: iun-openimis-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+      - FailOnSharedResource=true
+      - CreateNamespace=false  # namespace deja cree Week 1 1.1
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+  ignoreDifferences:
+    # CNPG geree par operator-controller-manager - notre apply ne doit pas concurrence
+    # (CNPG ajuste status, conditions, etc. en continu)
+    - group: postgresql.cnpg.io
+      kind: Cluster
+      jsonPointers:
+        - /status
+    # Deployments replicas peuvent etre overrides par HPA si en place (Sprint 3+)
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+      managedFieldsManagers:
+        - kube-controller-manager
+    # VSO regenere les Secrets - on ignore le contenu data (geree par VSO)
+    - group: ""
+      kind: Secret
+      jsonPointers:
+        - /data
+      managedFieldsManagers:
+        - vault-secrets-operator

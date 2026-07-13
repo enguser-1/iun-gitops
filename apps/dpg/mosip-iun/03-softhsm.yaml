@@ -1,0 +1,154 @@
+# ============================================================================
+# 03-softhsm.yaml — SoftHSM dev token store for keymanager
+# ----------------------------------------------------------------------------
+# Purpose      : provides a file-based PKCS#11 token for keymanager. DEV ONLY.
+#                In prod, swap for a real HSM (Luna, Utimaco, etc.).
+# Dependencies : namespace bootstrap; SCC `mosip-scc` bound to SA
+#                `mosip-softhsm-sa` (PS script 02-sa-scc.ps1 binds it).
+# Override     : Lead can swap PVC to NFS RWX or point keymanager at a
+#                network HSM via overlay.
+# Gotchas      :
+#   - The official `softhsm/softhsm2` Docker image is NOT reliably tagged
+#     on docker.io. We instead use `debian:bookworm-slim` and apt-get install
+#     softhsm2 in an init container. Trade-off: slower start, but reliable.
+#   - PVC is RWO Ceph RBD → single-attach. Keymanager (07-keymanager.yaml)
+#     mounts the SAME PVC, so:
+#       a) keymanager Deployment uses strategy=Recreate, AND
+#       b) keymanager and this STS MUST be schedulable on the same node, OR
+#       c) move tokens PVC to RWX (ocs-...-cephfs) in a future overlay.
+#     For MVP: a+b is the pragmatic choice (single node OK in dev).
+#   - PIN values come from global CM keys softhsm.kernel.security.pin and
+#     a fixed SO-PIN baked in here (DEV ONLY).
+#   - Pod template annotation `openshift.io/required-scc: mosip-scc` because
+#     apt-get install needs CAP_SETUID / CAP_SETGID during package config.
+# ============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mosip-softhsm-sa
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: softhsm-kernel
+    app.kubernetes.io/component: hsm
+imagePullSecrets:
+  - name: docker-hub-creds
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: softhsm-kernel
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: softhsm-kernel
+    app.kubernetes.io/component: hsm
+spec:
+  type: ClusterIP
+  clusterIP: None        # headless — softhsm is consumed via shared PVC, not network
+  ports:
+    - name: placeholder
+      port: 1234
+      targetPort: 1234
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: softhsm-kernel
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: softhsm-kernel
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: softhsm-kernel
+    app.kubernetes.io/component: hsm
+  annotations:
+    iun.sn/pvc-sharing-note: "Same PVC mounted RWO by keymanager (cf. PITFALLS.md section 11)"
+spec:
+  serviceName: softhsm-kernel
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: softhsm-kernel
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: softhsm-kernel
+        app.kubernetes.io/component: hsm
+      annotations:
+        openshift.io/required-scc: mosip-scc
+    spec:
+      serviceAccountName: mosip-softhsm-sa
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsUser: 0       # needs root for apt-get + softhsm2-util init
+      initContainers:
+        - name: install-softhsm
+          image: docker.io/library/debian:bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "[init] installing softhsm2..."
+              apt-get update -y
+              apt-get install -y --no-install-recommends softhsm2
+              mkdir -p /var/lib/softhsm/tokens
+              chown -R root:root /var/lib/softhsm
+              if softhsm2-util --show-slots | grep -q "Label:.*kernel"; then
+                echo "[init] kernel token already initialised, skipping"
+              else
+                echo "[init] initialising kernel token..."
+                softhsm2-util --init-token \
+                  --slot 0 \
+                  --label kernel \
+                  --so-pin iun-dev-so-pin \
+                  --pin iun-dev-pin
+              fi
+              echo "[init] done"
+          volumeMounts:
+            - name: tokens
+              mountPath: /var/lib/softhsm/tokens
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+      containers:
+        - name: keep-alive
+          image: docker.io/library/debian:bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c", "trap 'exit 0' SIGTERM; sleep infinity & wait"]
+          ports:
+            - containerPort: 1234
+              name: placeholder
+          readinessProbe:
+            exec:
+              command: ["/bin/bash", "-c", "test -d /var/lib/softhsm/tokens"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          volumeMounts:
+            - name: tokens
+              mountPath: /var/lib/softhsm/tokens
+  volumeClaimTemplates:
+    - metadata:
+        name: tokens
+        labels:
+          app.kubernetes.io/name: softhsm-kernel
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ocs-external-storagecluster-ceph-rbd
+        resources:
+          requests:
+            storage: 5Gi

@@ -1,0 +1,149 @@
+# ============================================================================
+# Backend OpenIMIS - gunicorn 8000 (corrige PITFALLS 1, 3 et 5)
+# ============================================================================
+# Corrections vs ancien openimis-dev (hot-patche) :
+#   - PAS de sitecustomize.py monkey-patch (PITFALLS §1)
+#       -> DJANGO_LOG_HANDLER=console + DJANGO_DB_LOG_HANDLER=console
+#   - PAS de mount /tmp/db-queries.log, PAS de PVC logs
+#   - TCP probe port 8000 (PITFALLS §3 - /api/ renvoie 404)
+#   - CELERY_BROKER_URL depuis Secret openimis-broker (PITFALLS §5)
+#   - Modules MVP filtres via ConfigMap openimis-config (15 modules, sante coupee)
+#   - MODE=PROD, HOSTS/CSRF_TRUSTED_ORIGINS/SITE_URL alignes Route
+#
+# 2 replicas (HA legere).
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimis-backend
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimis-backend
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: backend
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      # MVP : openimis-be:25.10 en cache sur compute01 et compute02 uniquement.
+      # nodeAffinity required = scheduler limite, podAntiAffinity preferred =
+      # tente de spread les 2 replicas sur 2 nodes differents. A retirer apres
+      # mirror quay.heritage.africa cluster-wide.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - compute01.origins.heritage.africa
+                      - compute02.origins.heritage.africa
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: openimis
+                    app.kubernetes.io/component: backend
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: backend
+          image: ghcr.io/openimis/openimis-be:25.10
+          imagePullPolicy: IfNotPresent
+          args: ["start"]
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: openimis-db-app
+            - secretRef:
+                name: openimis-broker
+            - secretRef:
+                name: openimis-redis
+            - secretRef:
+                name: openimis-django
+          env:
+            - name: MODE
+              value: PROD
+            - name: DJANGO_LOG_HANDLER
+              value: console
+            - name: DJANGO_DB_LOG_HANDLER
+              value: console
+            - name: DJANGO_LOG_LEVEL
+              value: INFO
+            - name: DEMO_DATASET
+              value: "false"
+            - name: SITE_ROOT
+              value: api
+            - name: SITE_URL
+              value: https://openimis-iun-dev.apps.origins.heritage.africa
+            - name: HOSTS
+              value: openimis-iun-dev.apps.origins.heritage.africa,openimis-frontend.iun-openimis-dev.svc.cluster.local
+            - name: CSRF_TRUSTED_ORIGINS
+              value: https://openimis-iun-dev.apps.origins.heritage.africa
+            - name: OPENSEARCH_HOSTS
+              value: http://openimis-opensearch:9200
+            # PAS de OPENIMIS_CONF / volumeMount : voir explication 05-be-migrations.yaml
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      # PAS de volumes openimis-config : voir 05-be-migrations.yaml

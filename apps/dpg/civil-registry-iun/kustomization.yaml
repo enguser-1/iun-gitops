@@ -1,0 +1,31 @@
+# ============================================================================
+# Kustomization iun-civil-registry - sync order pour Argo CD Sprint 4
+# ============================================================================
+# 01 - ImageStream + BuildConfig
+# 02 - Deployment + ConfigMap (consume ImageStreamTag)
+# 03 - Service ClusterIP 8080
+# 04 - Route OCP edge TLS
+# 05 - NetworkPolicy cross-NS egress vers iun-uin-service:8080 + builds HTTPS
+#
+# Pre-requis namespace iun-opencrvs-dev :
+#   - MongoDB up (Service `mongo` + Secret mongodb-creds avec
+#     `app-username` / `app-password`)
+#   - DB `civil_registry_iun` + user `app` provisionnes par mongo-init Job
+#     (ou ajoutes manuellement - voir README troubleshooting)
+#   - iun-uin-service Ready dans iun-mosip-dev (Sprint 2 Week 3)
+#   - NetworkPolicies socle Week 1 v3 : deny-all + allow-dns +
+#     allow-ingress-router + allow-monitoring
+# ============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: iun-opencrvs-dev
+commonLabels:
+  app.kubernetes.io/part-of: iun-platform
+  iun.sn/dpg: civil-registry-custom
+  iun.sn/environment: dev
+resources:
+  - 01-buildconfig.yaml
+  - 02-deployment.yaml
+  - 03-service.yaml
+  - 04-route.yaml
+  - 05-network-policy-mosip-egress.yaml

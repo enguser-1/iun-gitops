@@ -1,0 +1,91 @@
+# ============================================================================
+# Stubs ConfigMaps/Secrets pour config-server MVP UIN-only
+# ============================================================================
+# Le chart mosip/config-server 12.0.3 embed ~70 env-vars referencant des
+# ConfigMaps/Secrets crees par les autres charts MOSIP (keycloak, activemq,
+# s3, msg-gateway, captcha, websub...). En MVP UIN-only on n'installe PAS ces
+# modules => stubs avec valeurs placeholder pour debloquer le pod boot.
+#
+# IMPORTANT : seul `postgres-setup-config` contient des VRAIES valeurs. Les
+# autres sont des stubs "stub.invalid" qui satisferont la validation Spring
+# au boot mais NE FONCTIONNERONT PAS si le code reel essaie d'utiliser ces
+# endpoints. C'est OK pour UIN flow qui ne touche que :
+#   - postgres (via mosip-postgres-rw)
+#   - softhsm-kernel (HSM dev)
+#   - keymanager local (port 8088)
+#
+# A retirer Sprint 3 quand on installera les vrais charts MOSIP (keycloak,
+# activemq, s3, msg-gateway...) en vue d'un MVP complet OpenCRVS + IDA + ...
+# ============================================================================
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-setup-config
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+    iun.sn/component: config-server-stub
+data:
+  mosip-database-hostname-override: mosip-postgres-rw
+  mosip-database-port-override: "5432"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-host
+  namespace: iun-mosip-dev
+  labels:
+    iun.sn/dpg: mosip
+    iun.sn/component: config-server-stub
+data:
+  keycloak-internal-url: http://stub.invalid
+  keycloak-external-url: http://stub.invalid
+  keycloak-internal-host: stub.invalid
+  keycloak-external-host: stub.invalid
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: activemq-activemq-artemis-share
+  namespace: iun-mosip-dev
+  labels:
+    iun.sn/dpg: mosip
+    iun.sn/component: config-server-stub
+data:
+  activemq-host: stub.invalid
+  activemq-core-port: "61616"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3
+  namespace: iun-mosip-dev
+  labels:
+    iun.sn/dpg: mosip
+    iun.sn/component: config-server-stub
+data:
+  s3-user-key: stub
+  s3-region: us-east-1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: msg-gateway
+  namespace: iun-mosip-dev
+  labels:
+    iun.sn/dpg: mosip
+    iun.sn/component: config-server-stub
+data:
+  smtp-host: stub.invalid
+  sms-host: stub.invalid
+  smtp-port: "587"
+  sms-port: "443"
+  smtp-username: stub
+  sms-username: stub
+---
+# Note : les Secrets sont generes runtime par push-secrets-mosip.ps1
+# (mosip-postgres-superuser deja existant + 6 secrets stub crees runtime).
+# Ne PAS committer les Secrets en clair dans gitops (politique sec IUN).
+# Le script PowerShell les recree a l'identique a chaque rebuild.

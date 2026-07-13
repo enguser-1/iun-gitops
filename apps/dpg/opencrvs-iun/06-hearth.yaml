@@ -1,0 +1,117 @@
+# ============================================================================
+# 06-hearth.yaml — Hearth FHIR server (Jembi)
+# ----------------------------------------------------------------------------
+# Purpose      : FHIR R4 resource store for OpenCRVS (Patient, Composition,
+#                Encounter, Task). Backed by MongoDB hearth-dev.
+# Dependencies : MongoDB Ready ; mongo-init-databases Job complete (hearth-dev
+#                must exist with `app` user).
+# Override     : Lead must consider mirroring jembi/hearth:latest to a tagged
+#                internal image (PITFALLS #14 — jembi does not publish
+#                semver-pinned tags officially).
+# Gotchas      :
+#   - PITFALLS #5 — Hearth tries to read its config on cold-boot ; if Mongo
+#     is up but hearth-dev DB has no user, Hearth crashes on first request
+#     (not on startup) — Jobs ordering matters.
+#   - The image tag is `latest` because there is no semver. Annotation
+#     iun.sn/image-tag-verified is the date we ran a manual integrity check.
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: hearth
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: hearth
+    app.kubernetes.io/component: infra
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3447
+      targetPort: 3447
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: hearth
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hearth
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: hearth
+    app.kubernetes.io/component: infra
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — jembi/hearth:latest, manual integrity check (no semver upstream, PITFALLS #14)"
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hearth
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hearth
+        app.kubernetes.io/component: infra
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: hearth
+          image: docker.io/jembi/hearth:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3447
+              protocol: TCP
+          env:
+            - name: MONGO_APP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-creds
+                  key: app-username
+            - name: MONGO_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-creds
+                  key: app-password
+            - name: mongodb__url
+              value: "mongodb://$(MONGO_APP_USER):$(MONGO_APP_PASSWORD)@mongo-headless:27017/hearth-dev"
+            - name: server__port
+              value: "3447"
+            - name: logger__level
+              value: "info"
+            - name: authentication__type
+              value: "disabled"
+          readinessProbe:
+            httpGet:
+              path: /fhir/metadata
+              port: 3447
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /fhir/metadata
+              port: 3447
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"

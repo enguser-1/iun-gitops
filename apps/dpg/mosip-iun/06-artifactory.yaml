@@ -1,0 +1,129 @@
+# ============================================================================
+# 06-artifactory.yaml — Artifactory stub for MOSIP
+# ----------------------------------------------------------------------------
+# Purpose      : serves device-driver JARs, biometric SDK binaries, and
+#                certs to MOSIP services that need them at runtime
+#                (kernel-auth, masterdata in some flows). In the UIN-only
+#                MVP this is essentially an empty bucket — kept for envFrom
+#                compatibility and future ABIS work.
+# Dependencies : none.
+# Override     : Lead can swap for JFrog Artifactory via overlay.
+# Gotchas      :
+#   - Image tag 1.2.0.1 — verify on hub.docker.com/r/mosipid/artifactory-server.
+#     If not present, try `:develop` or build from mosip/artifactory repo.
+#   - The PVC mount path /artifactory-ready follows the MOSIP convention
+#     (k8s-infra/charts/artifactory).
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: artifactory-server
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: artifactory-server
+    app.kubernetes.io/component: artifact-store
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: artifactory-server
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: artifactory-data
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: artifactory-server
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: ocs-external-storagecluster-ceph-rbd
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: artifactory-server
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: artifactory-server
+    app.kubernetes.io/component: artifact-store
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — re-check hub.docker.com/r/mosipid/artifactory-server before apply"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # PVC RWO
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: artifactory-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: artifactory-server
+        app.kubernetes.io/component: artifact-store
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: artifactory-server
+          # IMAGE TAG: verify before apply — fallback :develop
+          image: docker.io/mosipid/artifactory-server:1.2.0.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: global
+            - secretRef:
+                name: conf-secrets
+          env:
+            - name: active_profile_env
+              value: "default"
+            - name: SERVER_PORT
+              value: "8080"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /artifactory-ready
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: artifactory-data

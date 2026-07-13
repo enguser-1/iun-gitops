@@ -1,0 +1,28 @@
+# ============================================================================
+# Route OCP edge TLS pour iun-uin-service
+# ============================================================================
+# TLS termine au router OCP (edge), backend HTTP 8080 - meme pattern OpenIMIS.
+# URL : https://iun-uin-dev.apps.origins.heritage.africa
+# ============================================================================
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: iun-uin-service
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: uin-custom
+  annotations:
+    haproxy.router.openshift.io/timeout: "30s"
+spec:
+  host: iun-uin-dev.apps.origins.heritage.africa
+  to:
+    kind: Service
+    name: iun-uin-service
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

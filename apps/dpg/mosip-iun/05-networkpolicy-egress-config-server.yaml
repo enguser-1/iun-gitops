@@ -1,0 +1,51 @@
+# ============================================================================
+# NetworkPolicy egress HTTPS pour config-server
+# ============================================================================
+# Spring Cloud Config Server clone le repo https://github.com/mosip/mosip-config
+# au boot pour servir les properties. Sans cette NP, Java/JGit timeout en 130s
+# car le socle deny-all-egress (Sprint 2) bloque toute sortie inter-NS et WAN.
+#
+# Mirror de allow-egress-https-postgres-init (Sprint 3 Phase 2). A consolider
+# en une NP unique en Sprint 3 #5 NetworkPolicy granulaire (1 NP par usecase
+# vs 1 par pod).
+# ============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-https-config-server
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+  annotations:
+    iun.sn/purpose: "Allow JGit clone github.com/mosip/mosip-config from config-server pod"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: config-server
+  policyTypes:
+    - Egress
+  egress:
+    # HTTPS public (GitHub)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # DNS OCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - protocol: UDP
+          port: 5353
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

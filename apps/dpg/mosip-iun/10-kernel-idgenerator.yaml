@@ -1,0 +1,116 @@
+# ============================================================================
+# 10-kernel-idgenerator.yaml — Kernel IDGenerator service (UIN issuer)
+# ----------------------------------------------------------------------------
+# Purpose      : generates UINs per the policy keys in 01-configmap-globale.yaml
+#                (mosip.kernel.uin.length=10 — ADR-R01).
+#                Exposes /idgenerator/uin and /idgenerator/vid endpoints.
+# Dependencies : config-server Ready; kernel-auth Ready; kernel-masterdata
+#                Ready; postgres Ready with mosip_kernel/mosip_idmap DBs;
+#                keymanager Ready (uses kernel signing key).
+# Override     : The Lead's decision lives in the global CM, NOT here. To
+#                change UIN length, patch the CM via overlay and restart this
+#                Deployment.
+# Gotchas      :
+#   - Image tag 1.2.0.1 — verify on hub.docker.com/r/mosipid/kernel-idgenerator-service.
+#     Fallback :1.2.0.4 or :develop.
+#   - On first boot, this service pre-populates the UIN pool to
+#     `mosip.kernel.uin.uins-to-generate` (1000 in dev). The Job takes a few
+#     minutes; readinessProbe failureThreshold=6 should be enough.
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: kernel-idgenerator-service
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: kernel-idgenerator-service
+    app.kubernetes.io/component: kernel
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8088
+      targetPort: 8088
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: kernel-idgenerator-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kernel-idgenerator-service
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: kernel-idgenerator-service
+    app.kubernetes.io/component: kernel
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — re-check hub.docker.com/r/mosipid/kernel-idgenerator-service before apply"
+    iun.sn/uin-decision: "Honours global CM mosip.kernel.uin.length=10 — ADR-R01"
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kernel-idgenerator-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kernel-idgenerator-service
+        app.kubernetes.io/component: kernel
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: kernel-idgenerator-service
+          # IMAGE TAG: verify before apply — fallback :1.2.0.4 or :develop
+          image: docker.io/mosipid/kernel-idgenerator-service:1.2.0.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8088
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: global
+            - secretRef:
+                name: conf-secrets
+          env:
+            - name: spring_config_label_env
+              value: "master"
+            - name: active_profile_env
+              value: "default"
+            - name: spring_config_url_env
+              value: "http://config-server.iun-mosip-dev.svc.cluster.local:8888"
+            - name: SERVER_PORT
+              value: "8088"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8088
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8088
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"

@@ -1,0 +1,55 @@
+# ============================================================================
+# openimis.json - liste des modules backend a charger (MVP IUN strict)
+# ============================================================================
+# Reference : research/openimis/EXEC-SUMMARY.md §2 et CHEAT-SHEET.md §7.
+#
+# 15 modules MVP : registre social + paiement d'allocations + interop FHIR.
+# COUPE : tout l'ecosysteme sante (claim/insuree/policy/contract/medical/etc.)
+#
+# Le fichier est monte dans le pod sur /openimis-be/openimis.json via subPath.
+# OPENIMIS_CONF env var pointe sur ce chemin.
+#
+# IMPORTANT : les modules doivent etre DEJA installes dans l'image. openimis.json
+# filtre INSTALLED_APPS mais n'installe pas de nouvelles deps pip.
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openimis-config
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: config
+data:
+  openimis.json: |
+    {
+      "modules": [
+        {"name": "core"},
+        {"name": "location"},
+        {"name": "individual"},
+        {"name": "tasks_management"},
+        {"name": "workflow"},
+        {"name": "social_protection"},
+        {"name": "payment_cycle"},
+        {"name": "calculation"},
+        {"name": "calcrule_social_protection"},
+        {"name": "calcrule_validations"},
+        {"name": "payroll"},
+        {"name": "invoice"},
+        {"name": "contribution_plan"},
+        {"name": "deduplication"},
+        {"name": "api_fhir_r4"},
+        {"name": "opensearch_reports"},
+        {"name": "report"},
+        {"name": "insuree"},
+        {"name": "policy"},
+        {"name": "product"},
+        {"name": "contribution"},
+        {"name": "payment"},
+        {"name": "claim"},
+        {"name": "claim_batch"},
+        {"name": "medical"},
+        {"name": "medical_pricelist"},
+        {"name": "payer"}
+      ]
+    }

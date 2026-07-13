@@ -1,0 +1,107 @@
+# ============================================================================
+# Redis - cache Django (PAS le broker, cf. EXEC-SUMMARY.md §3)
+# ============================================================================
+# 1 replica MVP. Password depuis Secret openimis-redis (cle REDIS_PASSWORD).
+# Le service est consomme par backend/worker via env CACHE_URL deja construit
+# dans le secret openimis-redis (forme : redis://:PWD@openimis-redis:6379).
+#
+# Image redis:7-alpine (mainstream Docker Hub, alignee avec l'ancien
+# openimis-dev qui tournait - image deja en cache sur les nodes du cluster
+# origins.heritage.africa, contrairement a bitnami/redis qui n'est pas mirrored).
+#
+# UID 999 (user `redis` standard de l'image alpine) -> SCC iun-anyuid-caps
+# (restricted-v2 refuserait cet UID hors range namespace).
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimis-redis
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimis-redis
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: redis
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--requirepass"
+            - "$(REDIS_PASSWORD)"
+            - "--maxmemory"
+            - "256mb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: openimis-redis
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop: ["ALL"]
+            # PAS de seccompProfile : SCC iun-anyuid-caps refuse le champ
+            # (cf. evenement FailedCreate : "seccomp may not be set"). La
+            # seccomp policy est appliquee au niveau du pod par CRI-O par defaut.

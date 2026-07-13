@@ -1,0 +1,39 @@
+# ============================================================================
+# kustomization.yaml — MOSIP IUN MVP (UIN-only) direct YAML
+# Purpose : aggregate the sub-graph for `kubectl apply -k` / Argo CD.
+# Order   : kustomize does NOT guarantee apply order — the PS driver script
+#           applies files in the listed order, waits on Ready between phases.
+# Override: Lead patches via overlays/ (not present yet).
+# ----------------------------------------------------------------------------
+# Apply phases (cf. driver PS script):
+#   Phase 1 : 00..01 (configs only, fast)
+#   Phase 2 : 02..04 (data plane — postgres, softhsm, kafka) — wait Ready
+#   Phase 3 : jobs/db-schema-init.yaml — wait Complete
+#   Phase 4 : 05..06 (config-server, artifactory) — wait Ready
+#   Phase 5 : 07 (keymanager) — wait Ready
+#   Phase 6 : jobs/keygen.yaml — wait Complete
+#   Phase 7 : 08..10 (kernel-auth, masterdata, idgenerator) — wait Ready
+#   Phase 8 : jobs/masterdata-loader.yaml — wait Complete
+# ============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: iun-mosip-dev
+commonLabels:
+  app.kubernetes.io/part-of: iun-platform
+  iun.sn/dpg: mosip
+  iun.sn/environment: dev
+resources:
+  - 00-secrets-placeholders.yaml
+  - 01-configmap-globale.yaml
+  - 02-postgres.yaml
+  - 03-softhsm.yaml
+  - 04-kafka.yaml
+  - 05-config-server.yaml
+  - 06-artifactory.yaml
+  - 07-keymanager.yaml
+  - 08-kernel-auth.yaml
+  - 09-kernel-masterdata.yaml
+  - 10-kernel-idgenerator.yaml
+  - jobs/db-schema-init.yaml
+  - jobs/keygen.yaml
+  - jobs/masterdata-loader.yaml

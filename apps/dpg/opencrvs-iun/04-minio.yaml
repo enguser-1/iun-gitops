@@ -1,0 +1,214 @@
+# ============================================================================
+# 04-minio.yaml — MinIO S3-compatible object storage + bucket init Job
+# ----------------------------------------------------------------------------
+# Purpose      : S3 backend for OpenCRVS `documents` service (PDFs, photos)
+#                + countryconfig static assets.
+# Dependencies : minio-creds Secret ; Route iun-civil-docs-dev (edge TLS).
+# Override     : Production = MinIO operator with 4+ pods erasure-coded.
+# Gotchas      :
+#   - PITFALLS #12 — MINIO_SERVER_URL MUST match the public Route host
+#     (iun-civil-docs-dev.apps.origins.heritage.africa) otherwise presigned
+#     URLs returned by `documents` service point to an internal hostname
+#     that the browser cannot resolve.
+#   - The minio-buckets-init Job uses `mc` (MinIO Client) to create the
+#     buckets the OpenCRVS code expects : `ocrvs` (records), `documents`
+#     (attachments). Anonymous read is NOT enabled (presigned URLs only).
+# ============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: infra
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ocs-external-storagecluster-ceph-rbd
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: infra
+spec:
+  type: ClusterIP
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: 9000
+      protocol: TCP
+    - name: console
+      port: 9001
+      targetPort: 9001
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: minio
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/component: infra
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — minio:RELEASE.2024-11-21T17-21-54Z pinned"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio
+        app.kubernetes.io/component: infra
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: minio
+          image: quay.io/minio/minio:RELEASE.2024-11-21T17-21-54Z
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: s3
+              containerPort: 9000
+              protocol: TCP
+            - name: console
+              containerPort: 9001
+              protocol: TCP
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-creds
+                  key: root-user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-creds
+                  key: root-password
+            # PITFALLS #12 — must match the public Route otherwise presigned URLs break.
+            - name: MINIO_SERVER_URL
+              value: "https://iun-civil-docs-dev.apps.origins.heritage.africa"
+            - name: MINIO_BROWSER_REDIRECT_URL
+              value: "https://iun-civil-docs-dev.apps.origins.heritage.africa"
+          command:
+            - sh
+            - -c
+            - exec minio server /data --console-address :9001
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minio-data
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-buckets-init
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: minio-buckets-init
+    app.kubernetes.io/component: infra
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio-buckets-init
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: mc
+          image: quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-creds
+                  key: root-user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-creds
+                  key: root-password
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "Waiting for MinIO..."
+              for i in $(seq 1 30); do
+                if mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" 2>/dev/null; then
+                  echo "MinIO reachable."
+                  break
+                fi
+                sleep 5
+              done
+              for B in ocrvs documents; do
+                if mc ls local/$B >/dev/null 2>&1; then
+                  echo "Bucket $B already exists."
+                else
+                  mc mb local/$B
+                  echo "Bucket $B created."
+                fi
+              done
+              echo "Bucket init complete."
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+

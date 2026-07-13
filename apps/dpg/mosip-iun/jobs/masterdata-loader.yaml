@@ -1,0 +1,97 @@
+# ============================================================================
+# jobs/masterdata-loader.yaml — seed kernel-masterdata
+# ----------------------------------------------------------------------------
+# Purpose      : populate masterdata reference tables (languages, locations,
+#                document types, blacklisted words, templates, etc.).
+#                Pre-requisite for any UIN issuance — kernel-idgenerator
+#                validates against masterdata.
+# Dependencies : kernel-masterdata-service Ready; kernel-auth Ready;
+#                postgres mosip_master schema populated by service Flyway.
+# Override     : Lead can mount a ConfigMap with country-specific CSVs and
+#                point the loader at it via overlay.
+# Gotchas      :
+#   - Image `docker.io/mosipid/masterdata-loader:1.2.0.1` — UNVERIFIED.
+#     If pull fails, the FALLBACK below uses curlimages/curl to POST a few
+#     baseline CSVs to /v1/masterdata/* endpoints (left commented for the Lead).
+#   - The seed data set lives in mosip/mosip-data-csv on GitHub; the official
+#     loader image clones it at start.
+# ============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: masterdata-loader
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: masterdata-loader
+    app.kubernetes.io/component: bootstrap
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — UNVERIFIED, see fallback in YAML"
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: masterdata-loader
+        app.kubernetes.io/component: bootstrap
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: default
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: loader
+          # PRIMARY: official MOSIP loader image. Verify on hub.docker.com.
+          # If unavailable, comment out and switch to the FALLBACK block below.
+          image: docker.io/mosipid/masterdata-loader:1.2.0.1
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: global
+            - secretRef:
+                name: conf-secrets
+          env:
+            - name: spring_config_label_env
+              value: "master"
+            - name: active_profile_env
+              value: "default"
+            - name: spring_config_url_env
+              value: "http://config-server.iun-mosip-dev.svc.cluster.local:8888"
+            - name: MASTERDATA_URL
+              value: "http://kernel-masterdata-service.iun-mosip-dev.svc.cluster.local:8088"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+
+      # ==========================================================================
+      # FALLBACK (commented) — replace the container above with this block if the
+      # primary image does not exist on Docker Hub:
+      #
+      # containers:
+      #   - name: loader-fallback
+      #     image: docker.io/curlimages/curl:8.5.0
+      #     command:
+      #       - /bin/sh
+      #       - -c
+      #       - |
+      #         set -eu
+      #         echo "[loader] waiting for kernel-masterdata..."
+      #         for i in $(seq 1 60); do
+      #           code=$(curl -s -o /dev/null -w "%{http_code}" \
+      #             "http://kernel-masterdata-service.iun-mosip-dev.svc.cluster.local:8088/actuator/health" || echo 000)
+      #           [ "$code" = "200" ] && break
+      #           sleep 10
+      #         done
+      #         echo "[loader] manual seed not implemented — Lead must provide CSV ConfigMap"
+      #         exit 0
+      # ==========================================================================

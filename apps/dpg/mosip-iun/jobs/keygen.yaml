@@ -1,0 +1,111 @@
+# ============================================================================
+# jobs/keygen.yaml — generate master keys (ROOT, KERNEL, IDA, ID_REPO)
+# ----------------------------------------------------------------------------
+# Purpose      : POST to keymanager's generateMasterKey endpoint for each
+#                application that needs a master key. Idempotent on the
+#                keymanager side (it skips if key already exists).
+# Dependencies : keymanager Ready (probes green); softhsm-kernel Ready.
+# Override     : Lead can add applications (e.g. PMS, PRE_REG) to the APPS
+#                list when those services are added back.
+# Gotchas      :
+#   - Endpoint shape on MOSIP v1.2.0.x:
+#       POST /v1/keymanager/generateMasterKey/{objectType}
+#       body = { "id":"...", "version":"v1", "request":{
+#                  "applicationId":"<APP>", "referenceId":"<APP>_<REF>" } }
+#   - We use a loop with retries because keymanager warm-up can be slow.
+#   - curlimages/curl:8.5.0 has bash+curl+jq; small image.
+# ============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mosip-keygen
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: mosip-keygen
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mosip-keygen
+        app.kubernetes.io/component: bootstrap
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: default
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: curl
+          image: docker.io/curlimages/curl:8.5.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KEYMANAGER_URL
+              value: "http://keymanager.iun-mosip-dev.svc.cluster.local:8088"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              echo "[keygen] waiting for keymanager /actuator/health..."
+              for i in $(seq 1 60); do
+                code=$(curl -s -o /dev/null -w "%{http_code}" "${KEYMANAGER_URL}/actuator/health" || echo 000)
+                if [ "$code" = "200" ]; then
+                  echo "[keygen] keymanager is up"
+                  break
+                fi
+                echo "[keygen] not ready ($i/60) http=$code"
+                sleep 10
+              done
+
+              APPS="ROOT KERNEL IDA ID_REPO PRE_REG REGISTRATION RESIDENT PARTNER"
+              for APP in $APPS; do
+                echo "[keygen] generating master key for $APP"
+                BODY=$(cat <<JSON
+              {
+                "id": "string",
+                "version": "v1",
+                "requesttime": "2026-06-03T00:00:00.000Z",
+                "metadata": {},
+                "request": {
+                  "applicationId": "$APP",
+                  "referenceId": ""
+                }
+              }
+              JSON
+              )
+                ok=0
+                for try in 1 2 3 4 5; do
+                  code=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+                    -X POST \
+                    -H "Content-Type: application/json" \
+                    "${KEYMANAGER_URL}/v1/keymanager/generateMasterKey/CERTIFICATE" \
+                    -d "$BODY" || echo 000)
+                  if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+                    echo "[keygen] $APP OK (try $try)"
+                    ok=1
+                    break
+                  fi
+                  echo "[keygen] $APP try $try got http=$code, retrying..."
+                  cat /tmp/resp.json || true
+                  sleep 6
+                done
+                if [ "$ok" != "1" ]; then
+                  echo "[keygen] WARNING: $APP did NOT confirm — continuing (key may already exist)"
+                fi
+              done
+              echo "[keygen] done"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"

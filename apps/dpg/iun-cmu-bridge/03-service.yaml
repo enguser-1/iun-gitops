@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: iun-cmu-bridge
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: iun-cmu-bridge
+spec:
+  selector:
+    app.kubernetes.io/name: iun-cmu-bridge
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

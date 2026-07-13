@@ -40,10 +40,10 @@ data:
   client-config.prod.js: |
     window.config = {
       API_GATEWAY_URL: "https://iun-civil-api-dev.apps.origins.heritage.africa/",
-      CONFIG_API_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig",
+      CONFIG_API_URL: "https://iun-civil-appconfig-dev.apps.origins.heritage.africa",
       AUTH_API_URL: "https://iun-civil-auth-dev.apps.origins.heritage.africa/",
       COUNTRY: "SN",
-      LANGUAGES: "fr,wo",
+      LANGUAGES: "fr,en,wo",
       CLIENT_APP_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/",
       COUNTRY_LOGO: { url: "", fileName: "" },
       BIRTH: { REGISTRATION_TARGET: 365, LATE_REGISTRATION_TARGET: 1825, FEE: { ON_TIME: 0, LATE: 1000, DELAYED: 2000 } },
@@ -79,9 +79,9 @@ data:
   login-config.prod.js: |
     window.config = {
       AUTH_API_URL: "https://iun-civil-auth-dev.apps.origins.heritage.africa/",
-      CONFIG_API_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/api/countryconfig",
+      CONFIG_API_URL: "https://iun-civil-appconfig-dev.apps.origins.heritage.africa",
       COUNTRY: "SN",
-      LANGUAGES: "fr,wo",
+      LANGUAGES: "fr,en,wo",
       CLIENT_APP_URL: "https://iun-opencrvs-app-dev.apps.origins.heritage.africa/",
       APPLICATION_NAME: "IUN Senegal MVP",
       COUNTRY_CONFIG_URL: "https://iun-civil-login-v2-dev.apps.origins.heritage.africa/api/countryconfig",

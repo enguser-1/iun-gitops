@@ -1,0 +1,52 @@
+# ============================================================================
+# OCP ImageStream + BuildConfig pour iun-civil-registry
+# ============================================================================
+# Strategy: binary docker (meme pattern que iun-uin-service).
+# Build on-cluster. Source code push via `oc start-build --from-dir`.
+# Output -> ImageStream:latest
+#   = image-registry.openshift-image-registry.svc:5000/iun-opencrvs-dev/iun-civil-registry:latest
+# ============================================================================
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: iun-civil-registry
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: civil-registry-custom
+    iun.sn/component: civil-registry
+  annotations:
+    iun.sn/purpose: "Custom OpenCRVS-replacement birth registry (Sprint 2 Week 4 pivot)"
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: iun-civil-registry
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: civil-registry-custom
+spec:
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: iun-civil-registry:latest
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3

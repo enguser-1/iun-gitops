@@ -1,0 +1,50 @@
+# ============================================================================
+# Patch ConfigMap post-helm postgres-init (fix bug #M2)
+# ============================================================================
+# Le chart `mosip/postgres-init` 1.2.0.2 hardcode GIT_BRANCH=release-1.2.0.1
+# par DB. Or cette BRANCHE n'existe pas sur mosip/commons + mosip/keymanager
+# (le tag v1.2.0.1 existe, mais pas la branche release-1.2.0.1). Resultat :
+# Jobs db-kernel-init et db-keymgr-init fail avec "Remote branch not found".
+#
+# Fix : remplacer GIT_BRANCH par le tag v1.2.0.1 (valide sur les 3 repos
+# admin-services + commons + keymanager). Application :
+#   1. helm install postgres-init (cree les CMs avec valeur buggee)
+#   2. oc apply -f ce fichier (override la valeur)
+#   3. Recrée les Jobs db-{kernel,keymgr}-init manuellement
+#
+# Action permanente Sprint 3 : forker chart pour ajouter toggle gitBranchOverride
+# ============================================================================
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-kernel-init-env-config
+  namespace: iun-mosip-dev
+  annotations:
+    iun.sn/fix: "M2-tag-override"
+    iun.sn/upstream-bug: "mosip/commons + mosip/keymanager: branch release-1.2.0.1 not found, only tag v1.2.0.1 exists"
+data:
+  DB_PORT: "5432"
+  DB_SERVERIP: mosip-postgres-rw
+  DML_FLAG: "0"
+  GIT_BRANCH: v1.2.0.1  # FIX M2 : v1.2.0.1 (tag) au lieu de release-1.2.0.1 (branche inexistante)
+  GIT_REPO_URL: https://github.com/mosip/commons.git
+  MOSIP_DB_NAME: mosip_kernel
+  SU_USER: postgres
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-keymgr-init-env-config
+  namespace: iun-mosip-dev
+  annotations:
+    iun.sn/fix: "M2-tag-override"
+    iun.sn/upstream-bug: "mosip/keymanager: branch release-1.2.0.1 not found, only tag v1.2.0.1 exists"
+data:
+  DB_PORT: "5432"
+  DB_SERVERIP: mosip-postgres-rw
+  DML_FLAG: "0"
+  GIT_BRANCH: v1.2.0.1  # FIX M2
+  GIT_REPO_URL: https://github.com/mosip/keymanager.git
+  MOSIP_DB_NAME: mosip_keymgr
+  SU_USER: postgres

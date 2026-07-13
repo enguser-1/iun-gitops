@@ -1,0 +1,28 @@
+# ============================================================================
+# Route OCP edge TLS pour iun-civil-registry
+# ============================================================================
+# URL : https://iun-civil-dev.apps.origins.heritage.africa
+# TLS terminated at router OCP (edge), backend HTTP 8080 (meme pattern uin-svc).
+# ============================================================================
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: iun-civil-registry
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: civil-registry-custom
+  annotations:
+    haproxy.router.openshift.io/timeout: "30s"
+spec:
+  host: iun-civil-dev.apps.origins.heritage.africa
+  to:
+    kind: Service
+    name: iun-civil-registry
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

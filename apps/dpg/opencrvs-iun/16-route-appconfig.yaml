@@ -1,0 +1,23 @@
+# Route vers le service config (application config OpenCRVS, port 2021).
+# Fix 2026-06-12 : CONFIG_API_URL pointait sur countryconfig ; le mock nginx
+# servait un faux /config qui masquait la confusion. Le vrai countryconfig
+# farajaland n'a pas cette route -> 404 -> Outbox "Failed to send".
+# Architecture v1.9 : CONFIG_API_URL = service config (config:2021).
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: iun-civil-appconfig
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: config
+    app.kubernetes.io/part-of: iun-platform
+spec:
+  host: iun-civil-appconfig-dev.apps.origins.heritage.africa
+  to:
+    kind: Service
+    name: config
+  port:
+    targetPort: 2021
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

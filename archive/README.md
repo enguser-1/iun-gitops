@@ -1,6 +1,13 @@
 # archive/ — Artefacts pré-pivot DPG (2026-05-24)
 
 > **Statut** : non utilisé. Conservé pour traçabilité uniquement.
+>
+> **NOTE 2026-05-25** : ce document conserve la mention historique d'un IUN
+> « 9 chiffres + Verhoeff » telle qu'elle figurait dans la TOR v2.0 au moment
+> du pivot DPG du 2026-05-24. Cette spécification a été révisée le 2026-05-25
+> par l'ADR-R01 (`architecture/sprint-2/ADR-REFACTOR-v1.md`) qui acte le format
+> définitif **10 chiffres** dont le 10ᵉ est un check digit Verhoeff. Le contenu
+> ci-dessous est conservé en l'état pour traçabilité du pivot.
 
 ## Contexte
 

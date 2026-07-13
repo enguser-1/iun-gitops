@@ -1,0 +1,44 @@
+# ============================================================================
+# ConfigMap iun-format-audit (adapte ns iun-mosip-dev) - INFORMATIONNEL
+# ============================================================================
+# Audit/doc des overrides IUN format Senegal. PAS de couplage runtime.
+# Les overrides reels sont injectes via env-vars dans le chart config-server
+# (values/dev-config-server.yaml).
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iun-format-audit
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: mosip
+    iun.sn/purpose: audit-uin-overrides
+  annotations:
+    iun.sn/tor-ref: "§4.1.2, §4.1.3, §4.1.4"
+    iun.sn/status: "informational - runtime overrides via config-server env-vars"
+    iun.sn/canonical-source: "mosip-config/application-default.properties @ master"
+data:
+  # IUN format - ADR-R01 2026-05-25 : alignement defaut MOSIP length=10
+  mosip.kernel.uin.length: "10"
+  _doc.check-digit-algorithm: "VERHOEFF (hardcoded in kernel-idgenerator-service)"
+
+  # Pool initial sandbox dev (vs 500000 prod)
+  mosip.kernel.uin.uins-to-generate:    "1000"
+  mosip.kernel.uin.min-unused-threshold: "100"
+
+  # Filtres anti-patterns - defaut MOSIP
+  mosip.kernel.uin.length.sequence-limit:                  "3"
+  mosip.kernel.uin.length.repeating-block-limit:           "2"
+  mosip.kernel.uin.length.repeating-limit:                 "2"
+  mosip.kernel.uin.length.reverse-digits-limit:            "5"
+  mosip.kernel.uin.length.digits-limit:                    "5"
+  mosip.kernel.uin.length.conjugative-even-digits-limit:   "3"
+  mosip.kernel.uin.not-start-with:                         "0,1"
+  mosip.kernel.uin.restricted-numbers:                     "786,666"
+
+  # Re-seed crypto RNG (defaut MOSIP - 45 min)
+  mosip.idgen.uin.secure-random-reinit-frequency:          "45"
+
+  # Espace IDs utiles a length=10
+  _doc.uin-address-space-estimate: "approx 164M valid UINs at length=10 (vs approx 19.4M population 2026) - ADR-R01"

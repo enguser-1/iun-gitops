@@ -1,0 +1,120 @@
+# ============================================================================
+# 02-postgres.yaml — single-node Postgres for MOSIP dev
+# ----------------------------------------------------------------------------
+# Purpose      : the 6 MOSIP databases live here. Single replica, pragmatic.
+#                (NOT CNPG — that was Week 1's approach; replaced by simple
+#                StatefulSet per the new MVP direction.)
+# Dependencies : namespace bootstrap done (SCC, quota, NPs).
+#                Secret `mosip-postgres-superuser` created by 01-secrets.ps1.
+# Next steps   : jobs/db-schema-init.yaml creates the 6 databases.
+# Override     : Lead can swap to CNPG or external RDS via overlay; ensure
+#                Service name `mosip-postgres` stays identical (referenced
+#                in global CM key `mosip-postgres-host`).
+# Gotchas      :
+#   - Runs as uid 999 (postgres standard) — namespace has SCC iun-anyuid-caps
+#     bound to SA default, so this passes admission.
+#   - PVC is RWO Ceph RBD → single-attach → pod must be Recreate-strategy
+#     when StatefulSet is updated (default for STS).
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosip-postgres
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: mosip-postgres
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: mosip-postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mosip-postgres
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: mosip-postgres
+    app.kubernetes.io/component: database
+spec:
+  serviceName: mosip-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mosip-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mosip-postgres
+        app.kubernetes.io/component: database
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:15-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_DB
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mosip-postgres-superuser
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: mosip-postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ocs-external-storagecluster-ceph-rbd
+        resources:
+          requests:
+            storage: 10Gi

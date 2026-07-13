@@ -1,0 +1,164 @@
+# ============================================================================
+# 10-countryconfig-sn.yaml ??? countryconfig-sn (MVP mock, port 3040)
+# ----------------------------------------------------------------------------
+# Purpose      : MVP MOCK that serves static JSON for OpenCRVS countryconfig
+#                contract : 14 Senegal regions (ANSD), 3 form templates
+#                (birth/death/marriage), language fr,wo, target=365 days.
+# Dependencies : none (must be Ready before config service).
+# Override     : Sprint 3 = real countryconfig forked from farajaland (the
+#                official OpenCRVS reference) with full form schemas + SMS
+#                provider + handlebars certificate templates.
+# Gotchas      :
+#   - PITFALLS #14 ??? Helm charts archived ; we wrote manifests by hand.
+#   - This mock returns static JSON ; endpoints OpenCRVS hits are stubbed.
+#   - Endpoints stubbed : /locations, /forms/birth, /forms/death,
+#     /forms/marriage, /content, /application-config.
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: countryconfig-sn-data
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: countryconfig
+    app.kubernetes.io/component: opencrvs
+  annotations:
+    iun.sn/mvp-mode: "mock"
+    iun.sn/sprint-3-todo: "fork farajaland repository and supply real form schemas + handlebars templates"
+data:
+  default.conf: |
+    server {
+      listen 3040;
+      server_name _;
+      default_type application/json;
+      gzip on;
+
+      location = /ping {
+        return 200 'OK';
+      }
+
+      location = /content {
+        return 200 '{"languages":["fr","wo"],"messages":{"fr":{"app.title":"IUN Senegal"},"wo":{"app.title":"IUN Senegal"}}}';
+      }
+
+      location = /application-config {
+        return 200 '{"APPLICATION_NAME":"IUN Senegal MVP","BIRTH":{"REGISTRATION_TARGET":365,"LATE_REGISTRATION_TARGET":1825,"FEE":{"ON_TIME":0,"LATE":1000,"DELAYED":2000}},"DEATH":{"REGISTRATION_TARGET":30,"LATE_REGISTRATION_TARGET":365,"FEE":{"ON_TIME":0,"LATE":500,"DELAYED":1000}},"COUNTRY":"SN","COUNTRY_LOGO":"data:image/png;base64,","CURRENCY":{"isoCode":"XOF","languagesAndCountry":["fr-SN"]},"LANGUAGES":"fr,wo","PHONE_NUMBER_PATTERN":"^7[05678][0-9]{7}","NID_NUMBER_PATTERN":"^[0-9]{10}","INFORMANT_SIGNATURE":true,"INFORMANT_SIGNATURE_REQUIRED":false}';
+      }
+
+      location = /locations {
+        return 200 '{"locations":[{"id":"sn-dakar","name":"Dakar","alias":"Dakar","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-thies","name":"Thies","alias":"Thies","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-saint-louis","name":"Saint-Louis","alias":"Saint-Louis","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-kaolack","name":"Kaolack","alias":"Kaolack","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-diourbel","name":"Diourbel","alias":"Diourbel","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-louga","name":"Louga","alias":"Louga","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-fatick","name":"Fatick","alias":"Fatick","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-tambacounda","name":"Tambacounda","alias":"Tambacounda","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-kolda","name":"Kolda","alias":"Kolda","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-ziguinchor","name":"Ziguinchor","alias":"Ziguinchor","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-matam","name":"Matam","alias":"Matam","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-kaffrine","name":"Kaffrine","alias":"Kaffrine","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-kedougou","name":"Kedougou","alias":"Kedougou","partOf":"Location/sn","jurisdictionType":"DISTRICT"},{"id":"sn-sedhiou","name":"Sedhiou","alias":"Sedhiou","partOf":"Location/sn","jurisdictionType":"DISTRICT"}]}';
+      }
+
+      location = /forms/birth {
+        return 200 '{"version":"0.0.1","event":"birth","sections":[{"id":"child","viewType":"form","name":{"defaultMessage":"Enfant"},"groups":[{"id":"child-view-group","fields":[{"name":"firstNamesEng","type":"TEXT","required":true},{"name":"familyNameEng","type":"TEXT","required":true},{"name":"birthDate","type":"DATE","required":true},{"name":"placeOfBirth","type":"SELECT_WITH_OPTIONS","required":true},{"name":"gender","type":"SELECT_WITH_OPTIONS","required":true,"options":[{"value":"male","label":"Masculin"},{"value":"female","label":"Feminin"}]}]}]},{"id":"mother","viewType":"form","name":{"defaultMessage":"Mere"},"groups":[{"id":"mother-view-group","fields":[{"name":"firstNamesEng","type":"TEXT","required":true},{"name":"familyNameEng","type":"TEXT","required":true},{"name":"nationalId","type":"TEXT","required":false}]}]},{"id":"father","viewType":"form","name":{"defaultMessage":"Pere"},"groups":[{"id":"father-view-group","fields":[{"name":"firstNamesEng","type":"TEXT","required":false},{"name":"familyNameEng","type":"TEXT","required":false}]}]}]}';
+      }
+
+      location = /forms/death {
+        return 200 '{"version":"0.0.1","event":"death","sections":[{"id":"deceased","viewType":"form","groups":[{"id":"deceased-view-group","fields":[{"name":"firstNamesEng","type":"TEXT","required":true},{"name":"familyNameEng","type":"TEXT","required":true},{"name":"deathDate","type":"DATE","required":true}]}]}]}';
+      }
+
+      location = /forms/marriage {
+        return 200 '{"version":"0.0.1","event":"marriage","sections":[{"id":"bride","viewType":"form","groups":[{"id":"bride-view-group","fields":[{"name":"firstNamesEng","type":"TEXT","required":true},{"name":"familyNameEng","type":"TEXT","required":true}]}]},{"id":"groom","viewType":"form","groups":[{"id":"groom-view-group","fields":[{"name":"firstNamesEng","type":"TEXT","required":true},{"name":"familyNameEng","type":"TEXT","required":true}]}]}]}';
+      }
+
+      location = /notification {
+        return 200 '{"status":"queued","provider":"mock-sms"}';
+        # PITFALLS #11 ??? real SMS provider wired Sprint 3.
+      }
+
+      location / {
+        return 404 '{"error":"endpoint not implemented in MVP mock"}';
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: countryconfig
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: countryconfig
+    app.kubernetes.io/component: opencrvs
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3040
+      targetPort: 3040
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: countryconfig
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: countryconfig
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: countryconfig
+    app.kubernetes.io/component: opencrvs
+  annotations:
+    iun.sn/mvp-mode: "mock"
+    iun.sn/image-tag-verified: "2026-06-03 ??? nginx:alpine"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: countryconfig
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: countryconfig
+        app.kubernetes.io/component: opencrvs
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+      containers:
+        - name: countryconfig
+          image: docker.io/nginxinc/nginx-unprivileged:alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3040
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 3040
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 4
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 3040
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: countryconfig-sn-data
+            items:
+              - key: default.conf
+                path: default.conf

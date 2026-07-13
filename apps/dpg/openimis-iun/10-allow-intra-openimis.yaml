@@ -1,0 +1,41 @@
+# ============================================================================
+# NetworkPolicy - allow-intra-openimis-ingress
+# ============================================================================
+# Autorise les pods labelles app.kubernetes.io/name=openimis a se parler entre
+# eux dans le namespace. Complete la NP allow-intra-namespace-egress deja
+# posee par le Lead (egress OK, mais deny-all bloque l'ingress).
+#
+# Pattern de flux IUN OpenIMIS :
+#   frontend -> backend (8000)
+#   backend  -> postgres (5432) / redis (6379) / rabbitmq (5672) / opensearch (9200)
+#   worker   -> postgres / redis / rabbitmq / opensearch
+#   dashboards -> opensearch (9200)
+#
+# Tous les pods ont le label app.kubernetes.io/name=openimis (cf. manifests
+# 02 a 08). Cette NP autorise donc tout le pod-to-pod intra-stack.
+#
+# CNPG primary <-> standby est deja couvert par allow-cnpg-ingress (deja posee).
+# ============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-openimis-ingress
+  namespace: iun-openimis-dev
+  labels:
+    iun.sn/managed-by: rebuild-openimis
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+        # Egalement autoriser depuis les pods CNPG (workload Postgres qui ne porte
+        # pas le label openimis mais qui peut etre interroge par backend/worker)
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: openimis-db

@@ -1,0 +1,64 @@
+# ============================================================================
+# values artifactory - chart mosip/artifactory 12.0.2 - iun-mosip-dev
+# ============================================================================
+# Adaptation du values Lead `dev-artifactory.yaml` (peu de diff vs Lead) :
+#   - storageClass : ocs-external-storagecluster-ceph-rbd (testee sur cluster
+#     Heritage par Test-IUNCluster.ps1 Sprint 2, vs ocs-storagecluster-ceph-rbd
+#     du Lead qui peut ne pas exister)
+#
+# Le chart produit la ConfigMap `artifactory-share` (envFrom de keymanager +
+# idgenerator). Sans ca = CreateContainerConfigError dans les 2 pods (3h47
+# de debug v1 selon Lead).
+# ============================================================================
+
+image:
+  pullPolicy: IfNotPresent
+
+persistence:
+  enabled: true
+  storageClass: ocs-external-storagecluster-ceph-rbd
+  accessMode: ReadWriteOnce
+  size: 5Gi
+  mountPath: /home/mosip/artifactory
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 512Mi
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+
+configmap:
+  create: true
+  name: artifactory-share
+
+replicaCount: 1
+
+probes:
+  readiness:
+    httpGet:
+      path: /actuator/health/readiness
+      port: 8080
+    initialDelaySeconds: 30
+  liveness:
+    httpGet:
+      path: /actuator/health/liveness
+      port: 8080
+    initialDelaySeconds: 60
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+serviceAccount:
+  create: true
+  name: mosip-artifactory

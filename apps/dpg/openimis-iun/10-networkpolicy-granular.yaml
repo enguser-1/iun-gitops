@@ -1,0 +1,260 @@
+# ============================================================================
+# NetworkPolicy granulaire IUN OpenIMIS (Sprint 3 ticket #5)
+# ============================================================================
+# Remplace l'ancienne NP brute force `allow-intra-openimis-ingress` (qui autorisait
+# n'importe quel pod app.kubernetes.io/name=openimis a parler a n'importe quel
+# autre - trop large pour une posture securite production).
+#
+# 6 NPs (1 par destination) qui modelisent exactement les flows runtime OpenIMIS :
+#
+#   Source                          -> Destination                          Port
+#   ----------------------------------------------------------------------------
+#   frontend                        -> backend                              8000
+#   frontend                        -> opensearch-dashboards                5601
+#   backend, worker, migrations     -> postgres                             5432
+#   backend, worker, migrations     -> redis                                6379
+#   backend, worker, migrations     -> rabbitmq                             5672
+#   backend, worker, migrations     -> opensearch                           9200
+#   opensearch-dashboards           -> opensearch                           9200
+#
+# Selectors : app.kubernetes.io/component=<role>, app.kubernetes.io/name=openimis
+# (cf. labels declarees dans 02-redis, 03-rabbitmq, etc.)
+#
+# Coexistence avec :
+#   - deny-all (Week 1) - tout est bloque par defaut, ces NPs autorisent par exception
+#   - allow-dns (Week 1) - egress DNS pour resolver les Services
+#   - allow-intra-namespace-egress (Lead post-Week 1) - egress generique - ON LE GARDE
+#     ces NPs ajoutent l'ingress correspondant qui manquait
+#   - allow-cnpg-ingress (Lead post-Week 1) - couvre la replication CNPG si on
+#     revient sur CNPG en Sprint 3 ticket #1
+#
+# A APPLIQUER APRES DELETION de allow-intra-openimis-ingress (faite separement
+# avec un oc delete) pour eviter la coexistence brute-force + granulaire.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Postgres (openimis-db) - cible des flows backend/worker/migrations
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-allow-from-app
+  namespace: iun-openimis-dev
+  labels:
+    iun.sn/managed-by: rebuild-openimis
+    iun.sn/sprint: sprint-3-ticket-5
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: backend
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: worker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: migrations
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# ----------------------------------------------------------------------------
+# Redis - cible des flows backend/worker/migrations
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-allow-from-app
+  namespace: iun-openimis-dev
+  labels:
+    iun.sn/managed-by: rebuild-openimis
+    iun.sn/sprint: sprint-3-ticket-5
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: backend
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: worker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: migrations
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+# ----------------------------------------------------------------------------
+# RabbitMQ - cible des flows backend/worker (broker Celery)
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-allow-from-app
+  namespace: iun-openimis-dev
+  labels:
+    iun.sn/managed-by: rebuild-openimis
+    iun.sn/sprint: sprint-3-ticket-5
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: rabbitmq
+  policyTypes:
+    - Ingress
+  ingress:
+    # AMQP - backend et worker pour Celery
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: backend
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: worker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: migrations
+      ports:
+        - protocol: TCP
+          port: 5672
+    # Inter-node RabbitMQ clustering (preparation Sprint 4 HA RMQ)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 5672
+        - protocol: TCP
+          port: 25672
+        - protocol: TCP
+          port: 4369
+---
+# ----------------------------------------------------------------------------
+# OpenSearch - cible des flows backend/worker/dashboards
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opensearch-allow-from-app-and-dashboards
+  namespace: iun-openimis-dev
+  labels:
+    iun.sn/managed-by: rebuild-openimis
+    iun.sn/sprint: sprint-3-ticket-5
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: opensearch
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: backend
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: worker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: migrations
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: opensearch-dashboards
+      ports:
+        - protocol: TCP
+          port: 9200
+    # Transport port pour cluster OpenSearch (Sprint 4 HA OS)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: opensearch
+      ports:
+        - protocol: TCP
+          port: 9300
+---
+# ----------------------------------------------------------------------------
+# Backend (gunicorn) - cible du flow frontend (/api/) et health probes
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-from-frontend
+  namespace: iun-openimis-dev
+  labels:
+    iun.sn/managed-by: rebuild-openimis
+    iun.sn/sprint: sprint-3-ticket-5
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: frontend
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+# ----------------------------------------------------------------------------
+# OpenSearch Dashboards - cible du flow frontend (/opensearch/)
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dashboards-allow-from-frontend
+  namespace: iun-openimis-dev
+  labels:
+    iun.sn/managed-by: rebuild-openimis
+    iun.sn/sprint: sprint-3-ticket-5
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: opensearch-dashboards
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openimis
+              app.kubernetes.io/component: frontend
+      ports:
+        - protocol: TCP
+          port: 5601

@@ -1,0 +1,118 @@
+# ============================================================================
+# 05-config-server.yaml — Spring Cloud Config Server (MOSIP)
+# ----------------------------------------------------------------------------
+# Purpose      : serves application.properties + service.properties files
+#                pulled from github.com/mosip/mosip-config to all downstream
+#                MOSIP Java services. Critical path — every service polls it
+#                at startup.
+# Dependencies : NetworkPolicy egress-github-https (PS bootstrap already
+#                allows GitHub on 443).
+# Override     : Lead can switch the Git URI / branch via overlay or via
+#                env-var patch (spring_cloud_config_server_git_uri).
+# Gotchas      :
+#   - Image tag 1.2.0.1 verified on hub.docker.com/r/mosipid/config-server
+#     2026-06-03 — but Lead should re-verify; mosipid sometimes ships
+#     1.2.0.4 only. If pull fails, patch image to `:develop`.
+#   - Stateless: NO PVC. Restarts pull a fresh git clone.
+#   - Health endpoint is /actuator/health on 8888.
+#   - envFrom on `global` + `conf-secrets` so the server resolves placeholders
+#     in properties that mosip-config references via ${...}.
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-server
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: config-server
+    app.kubernetes.io/component: config
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8888
+      targetPort: 8888
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: config-server
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-server
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: config-server
+    app.kubernetes.io/component: config
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — re-check hub.docker.com/r/mosipid/config-server before apply"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: config-server
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: config-server
+        app.kubernetes.io/component: config
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: config-server
+          # IMAGE TAG: verify before apply — fallback :1.2.0.4 or :develop
+          image: docker.io/mosipid/config-server:1.2.0.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8888
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: global
+            - secretRef:
+                name: conf-secrets
+          env:
+            - name: spring_cloud_config_server_git_uri
+              value: "https://github.com/mosip/mosip-config"
+            - name: spring_cloud_config_label_env
+              value: "master"
+            - name: spring_config_label_env
+              value: "master"
+            - name: active_profile_env
+              value: "default"
+            - name: SERVER_PORT
+              value: "8888"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8888
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8888
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1500Mi"

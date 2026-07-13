@@ -1,0 +1,41 @@
+# ============================================================================
+# kustomization.yaml — OpenCRVS 1.9.13 IUN MVP (iun-opencrvs-dev)
+# ----------------------------------------------------------------------------
+# Purpose      : aggregate the 23 OpenCRVS manifests into a kustomize tree so
+#                the Lead can `oc apply -k .` if needed. Real deployment is
+#                driven by Run-OpenCRVS.ps1 (one file at a time, server-side).
+# Dependencies : Namespace iun-opencrvs-dev pre-bootstrapped (Week 1 v3).
+# Override     : Add overlays in a sibling dir if needed for prod/stage.
+# Gotchas      : ordering here is informational only — kustomize does not
+#                enforce sequential apply. Use Run-OpenCRVS.ps1 for ordering.
+# ============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: iun-opencrvs-dev
+resources:
+  - 00-secrets-placeholders.yaml
+  - 01-mongodb-statefulset.yaml
+  - 02-elasticsearch.yaml
+  - 03-redis.yaml
+  - 04-minio.yaml
+  - 05-influxdb.yaml
+  - 06-hearth.yaml
+  - 07-core-services/auth.yaml
+  - 07-core-services/user-mgnt.yaml
+  - 07-core-services/registration.yaml
+  - 07-core-services/search.yaml
+  - 07-core-services/workflow.yaml
+  - 07-core-services/notification.yaml
+  - 07-core-services/webhooks.yaml
+  - 07-core-services/documents.yaml
+  - 07-core-services/config.yaml
+  - 07-core-services/gateway.yaml
+  - 08-frontend-client.yaml
+  - 09-frontend-login.yaml
+  - 10-countryconfig-sn.yaml
+  - 11-mosip-middleware.yaml
+  - 12-network-policies-cross-ns.yaml
+  - 13-routes.yaml
+commonLabels:
+  app.kubernetes.io/part-of: opencrvs
+  iun.sn/sprint: "S2W4"

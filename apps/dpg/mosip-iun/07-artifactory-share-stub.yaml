@@ -1,0 +1,26 @@
+# ============================================================================
+# Stub ConfigMap artifactory-share pour keymanager (MVP UIN-only)
+# ============================================================================
+# Le chart mosip/keymanager 12.0.2 envFrom le CM `artifactory-share` qui est
+# normalement cree par le chart mosip/artifactory (mock keys-server dev).
+# En MVP UIN-only on n'installe PAS artifactory => stub avec url placeholder.
+#
+# envFrom: charge le CM entier en env vars sans validation de keys obligatoires
+# donc un stub vide ou minimal suffit. Si keymanager tente d'utiliser
+# artifactory-url runtime (test des master keys), ca echouera mais on n'aura
+# pas besoin de ces keys pour UIN generation (qui ne fait que mod-Verhoeff).
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: artifactory-share
+  namespace: iun-mosip-dev
+  labels:
+    iun.sn/dpg: mosip
+    iun.sn/component: keymanager-stub
+    app.kubernetes.io/part-of: iun-platform
+  annotations:
+    iun.sn/purpose: "Stub artifactory-share CM - mock keys-server non-installe en MVP UIN-only"
+    iun.sn/bug-ref: "M3-cross-modules"
+data:
+  artifactory-url: "http://stub.invalid"

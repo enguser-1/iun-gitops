@@ -1,0 +1,220 @@
+# ============================================================================
+# OpenSearch 2.13.0 single-node + Dashboards (MVP PoC, pas HA)
+# ============================================================================
+# Tag :2.13.0 aligne sur l'ancien openimis-dev (image deja en cache nodes).
+# - discovery.type=single-node (1 noeud, pas de quorum)
+# - plugins.security.disabled=true (PoC) + plugins.security.ssl.http.enabled=false
+# - OPENSEARCH_INITIAL_ADMIN_PASSWORD obligatoire en 2.12+ meme avec security off
+#   (lu depuis Secret openimis-django key OPENSEARCH_PASSWORD)
+# - StorageClass ocs-external-storagecluster-ceph-rbd (RWO 10Gi)
+# - SCC iun-anyuid-caps (UID 1000 strict pour bootstrap keystore opensearch)
+#
+# Dashboards : Deployment separe, OPENSEARCH_HOSTS pointe sur le service interne.
+# Pas d'auth (single-node PoC). Pas expose en Route - proxifie par frontend /opensearch.
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimis-opensearch
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: opensearch
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200
+    - name: transport
+      port: 9300
+      targetPort: 9300
+  selector:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: opensearch
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: openimis-opensearch
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: opensearch
+spec:
+  serviceName: openimis-opensearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: opensearch
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: opensearch
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      # MVP : pin sur compute03 ou l'image opensearch:2.13.0 est en cache.
+      # A retirer apres mirror quay.heritage.africa ou pre-pull cluster-wide.
+      nodeSelector:
+        kubernetes.io/hostname: compute03.origins.heritage.africa
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: opensearch
+          image: opensearchproject/opensearch:2.13.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: cluster.name
+              value: openimis-os
+            - name: node.name
+              value: openimis-os-0
+            - name: bootstrap.memory_lock
+              value: "false"
+            - name: plugins.security.disabled
+              value: "true"
+            - name: plugins.security.ssl.http.enabled
+              value: "false"
+            - name: OPENSEARCH_JAVA_OPTS
+              value: "-Xms512m -Xmx512m"
+            - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: openimis-django
+                  key: OPENSEARCH_PASSWORD
+          ports:
+            - name: http
+              containerPort: 9200
+            - name: transport
+              containerPort: 9300
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/opensearch/data
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+            initialDelaySeconds: 40
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9200
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 300m
+              memory: 1Gi
+            limits:
+              cpu: 1500m
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            runAsUser: 1000
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: openimis
+          app.kubernetes.io/component: opensearch
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ocs-external-storagecluster-ceph-rbd
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimis-opensearch-dashboards
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: opensearch-dashboards
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 5601
+      targetPort: 5601
+  selector:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: opensearch-dashboards
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimis-opensearch-dashboards
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: opensearch-dashboards
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: opensearch-dashboards
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: opensearch-dashboards
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      # MVP : pin sur compute01 ou l'image opensearch-dashboards:2.13.0 est en cache.
+      nodeSelector:
+        kubernetes.io/hostname: compute01.origins.heritage.africa
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: dashboards
+          image: opensearchproject/opensearch-dashboards:2.13.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OPENSEARCH_HOSTS
+              value: '["http://openimis-opensearch:9200"]'
+            - name: DISABLE_SECURITY_DASHBOARDS_PLUGIN
+              value: "true"
+            - name: SERVER_BASEPATH
+              value: /opensearch
+            - name: SERVER_REWRITEBASEPATH
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 5601
+          readinessProbe:
+            httpGet:
+              path: /opensearch/api/status
+              port: 5601
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

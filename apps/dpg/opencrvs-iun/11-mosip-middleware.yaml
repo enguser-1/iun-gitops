@@ -1,0 +1,151 @@
+# ============================================================================
+# 11-mosip-middleware.yaml — @opencrvs/mosip-api middleware (port 2024)
+# ----------------------------------------------------------------------------
+# Purpose      : the official OpenCRVS <-> MOSIP middleware (paquet
+#                @opencrvs/mosip-api). Listens for OpenCRVS BIRTH_REGISTERED
+#                webhook, calls the configured MOSIP_API_URL to mint a UIN,
+#                writes the UIN back into Hearth as
+#                Patient.identifier[system="http://opencrvs.org/specs/id/national-id"].
+# Dependencies : auth Ready ; gateway Ready ; cross-NS NP to iun-mosip-dev.
+# Override     : Real MOSIP cluster URL goes in MOSIP_API_URL ; for the IUN
+#                MVP we point to our custom Python wrapper.
+# Gotchas      :
+#   - !!! CONTRAT FIGE !!! MOSIP_API_URL points to iun-uin-service.iun-mosip-dev.svc.cluster.local:8080
+#     (our Python wrapper that mints 10-digit Verhoeff UINs, ADR-R01). The
+#     standard MOSIP kernel-idgenerator-service:8088 in iun-mosip-dev is
+#     STILL there for MOSIP-native use cases, but OpenCRVS sees `iun-uin-service`.
+#   - iun-uin-service is NOT yet deployed (Sprint 3). Until then, this
+#     middleware will log a connection-refused error on every birth event,
+#     but OpenCRVS itself stays fully functional (declare/register/certify).
+#   - SQLite at /data/sqlite/tokens.db caches issuer auth tokens ; PVC 1Gi.
+# ============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mosip-api-sqlite
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: mosip-api
+    app.kubernetes.io/component: opencrvs
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ocs-external-storagecluster-ceph-rbd
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosip-api
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: mosip-api
+    app.kubernetes.io/component: opencrvs
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 2024
+      targetPort: 2024
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: mosip-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mosip-api
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: mosip-api
+    app.kubernetes.io/component: opencrvs
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — ghcr.io/opencrvs/mosip-api:1.9.1"
+    iun.sn/uin-decision: "MOSIP_API_URL -> iun-uin-service (ADR-R01 wrapper, NOT kernel-idgenerator-service)"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mosip-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mosip-api
+        app.kubernetes.io/component: opencrvs
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: mosip-api
+          image: ghcr.io/opencrvs/mosip-api:1.9.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 2024
+              protocol: TCP
+          env:
+            # === DECISION ADR-R01 (Lead Alex / 2026-05) =====================
+            # OpenCRVS thinks it is talking to "MOSIP", but the URL targets
+            # our custom Python wrapper that mints 10-digit Verhoeff UINs.
+            # The kernel-idgenerator-service:8088 in iun-mosip-dev exists
+            # for MOSIP-native flows ; iun-uin-service:8080 is OUR alias
+            # (deployed Sprint 3 ; may transitionally be a ClusterIP alias
+            #  forwarding to kernel-idgenerator-service:8088).
+            - name: MOSIP_API_URL
+              value: "http://iun-uin-service.iun-mosip-dev.svc.cluster.local:8080"
+            # === Public OpenCRVS endpoints (callback URLs the middleware
+            #     gives to "MOSIP" so the response webhook is routable) =====
+            - name: OPENCRVS_PUBLIC_URL
+              value: "https://iun-civil-dev.apps.origins.heritage.africa"
+            - name: OPENCRVS_GRAPHQL_GATEWAY_URL
+              value: "http://gateway:7070/graphql"
+            - name: OPENCRVS_AUTH_URL
+              value: "http://auth:4040"
+            # === Local SQLite (token cache) ================================
+            - name: SQLITE_DATABASE_PATH
+              value: "/data/sqlite/tokens.db"
+            # === Secrets (audit token, no auth on iun-uin-service MVP) =====
+            - name: OPENCRVS_RECORD_AUDIT_TOKEN
+              valueFrom: { secretKeyRef: { name: mosip-middleware-creds, key: OPENCRVS_RECORD_AUDIT_TOKEN } }
+            - name: IUN_UIN_SERVICE_AUTH
+              valueFrom: { secretKeyRef: { name: mosip-middleware-creds, key: IUN_UIN_SERVICE_AUTH } }
+            - name: NODE_ENV
+              value: "development"
+          volumeMounts:
+            - name: sqlite
+              mountPath: /data/sqlite
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 2024
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 2024
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: sqlite
+          persistentVolumeClaim:
+            claimName: mosip-api-sqlite

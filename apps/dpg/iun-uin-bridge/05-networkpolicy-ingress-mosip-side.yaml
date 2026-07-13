@@ -1,0 +1,30 @@
+# Cote iun-mosip-dev : autoriser l'ingress cross-ns vers iun-uin-service:8080
+# depuis les pods bridge et civil-registry de iun-opencrvs-dev.
+# (le socle deny-all de iun-mosip-dev bloque tout ingress cross-ns par defaut)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-uin-from-crvs
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: uin-custom
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: iun-uin-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: iun-opencrvs-dev
+          podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [iun-uin-bridge, iun-civil-registry]
+      ports:
+        - protocol: TCP
+          port: 8080

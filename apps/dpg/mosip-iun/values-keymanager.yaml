@@ -1,0 +1,69 @@
+# ============================================================================
+# values keymanager - chart mosip/keymanager 12.0.2 - iun-mosip-dev
+# ============================================================================
+# Adaptation du values Lead `dev-keymanager.yaml` :
+#   - host postgres : mosip-dev -> iun-mosip-dev
+#   - config-server uri : mosip-dev -> iun-mosip-dev
+#   - HSM : softhsm (dev) — cf. softhsm-kernel deja installe en iun-mosip-dev
+#
+# Pre-requis (tous deja OK) :
+#   - DB mosip_keymgr initialisee (Job postgres-init keymgr Completed apres fix #M2)
+#   - config-server pod Running 1/1
+#   - softhsm-kernel pod Running 1/1 + Secret softhsm-kernel/security-pin
+#   - mosip-postgres CNPG cluster 3/3 Running
+# ============================================================================
+
+image:
+  pullPolicy: IfNotPresent
+
+# -- Postgres : CNPG cluster mosip-postgres (iun-mosip-dev)
+postgres:
+  enabled: true
+  external: true
+  host: mosip-postgres-rw.iun-mosip-dev.svc.cluster.local
+  port: 5432
+  existingSecret: mosip-postgres-app
+  database: mosip_keymgr
+
+# -- Spring Cloud Config server - service interne iun-mosip-dev
+springCloudConfig:
+  enabled: true
+  uri: "http://config-server.iun-mosip-dev.svc.cluster.local:51000/config"
+  label: master
+  profile: default
+
+# -- HSM : softhsm dev (Luna FIPS L3 en staging/prod)
+hsm:
+  enabled: false
+
+softhsm:
+  enabled: true
+  pin: "1234"
+
+# -- Resources sandbox dev
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+  port: 8088
+
+ingress:
+  enabled: false
+
+probes:
+  readiness:
+    httpGet:
+      path: /actuator/health/readiness
+      port: 8088
+    initialDelaySeconds: 60
+  liveness:
+    httpGet:
+      path: /actuator/health/liveness
+      port: 8088
+    initialDelaySeconds: 120

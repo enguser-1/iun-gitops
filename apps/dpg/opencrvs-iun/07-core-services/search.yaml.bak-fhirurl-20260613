@@ -1,0 +1,113 @@
+# ============================================================================
+# search.yaml — OpenCRVS search service (port 9090)
+# ----------------------------------------------------------------------------
+# Purpose      : indexes Hearth records into Elasticsearch for fast lookup.
+# Dependencies : Elasticsearch Ready, Hearth Ready.
+# Override     : Fallback image docker.io/opencrvs/ocrvs-search:v1.9.13.
+# Gotchas      :
+#   - ES index `ocrvs` is created lazily on first write. If you query before
+#     a record exists, search returns empty (not 404).
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: search
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: search
+    app.kubernetes.io/component: opencrvs
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: search
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: search
+    app.kubernetes.io/component: opencrvs
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — ghcr.io/opencrvs/ocrvs-search:v1.9.13"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: search
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: search
+        app.kubernetes.io/component: opencrvs
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: search
+          image: ghcr.io/opencrvs/ocrvs-search:v1.9.13
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "development"
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "9090"
+            - name: ES_HOST
+              value: "http://elasticsearch:9200"
+            - name: HEARTH_URL
+              value: "http://hearth:3447/fhir"
+            - name: AUTH_URL
+              value: "http://auth:4040"
+            - name: COUNTRY_CONFIG_URL
+              value: "http://countryconfig:3040"
+            - name: CERT_PUBLIC_KEY_PATH
+              value: "/secrets/jwt-public.pem"
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /secrets
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 9090
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 9090
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: jwt-keys
+          secret:
+            secretName: jwt-keys
+            defaultMode: 0400

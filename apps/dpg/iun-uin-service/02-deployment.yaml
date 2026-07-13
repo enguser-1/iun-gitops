@@ -1,0 +1,108 @@
+# ============================================================================
+# iun-uin-service Deployment
+# ============================================================================
+# 2 replicas pour HA. Anti-affinity sur compute01/02/03 si possible.
+# Connexion DB via CNPG mosip-postgres-rw + secret mosip-postgres-superuser
+# (DB mosip_kernel deja initialisee par postgres-init fix #M2).
+# Compatible SCC restricted-v2 : UID arbitraire, fsGroup arbitraire, no privEsc.
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iun-uin-service
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: iun-uin-service
+    app.kubernetes.io/instance: iun-uin-service
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: uin-custom
+    iun.sn/component: uin-generator
+  annotations:
+    image.openshift.io/triggers: |
+      [{"from":{"kind":"ImageStreamTag","name":"iun-uin-service:latest","namespace":"iun-mosip-dev"},"fieldPath":"spec.template.spec.containers[?(@.name==\"iun-uin-service\")].image","pause":"false"}]
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iun-uin-service
+      app.kubernetes.io/instance: iun-uin-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iun-uin-service
+        app.kubernetes.io/instance: iun-uin-service
+        app.kubernetes.io/part-of: iun-platform
+        iun.sn/dpg: uin-custom
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: iun-uin-service
+      containers:
+        - name: iun-uin-service
+          image: image-registry.openshift-image-registry.svc:5000/iun-mosip-dev/iun-uin-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: DB_HOST
+              value: mosip-postgres-rw.iun-mosip-dev.svc.cluster.local
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: mosip_kernel
+            - name: DB_USER
+              value: postgres
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mosip-postgres-superuser
+                  key: password
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /actuator/readiness
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]

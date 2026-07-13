@@ -1,0 +1,227 @@
+# ============================================================================
+# 01-mongodb-statefulset.yaml — MongoDB 4.4 single-node + init Job
+# ----------------------------------------------------------------------------
+# Purpose      : storage backend for Hearth (hearth-dev), user-mgnt, config,
+#                webhooks, notification, metrics, performance, events.
+# Dependencies : ocs-external-storagecluster-ceph-rbd StorageClass; SCC
+#                iun-anyuid-caps bindee au SA default (Mongo image hardcoded
+#                UID 999 — PITFALLS #1).
+# Override     : To switch to a replica set (prod) duplicate this StatefulSet
+#                with replicas=3 + add a rs.initiate() init container, AND
+#                update the Mongo URL on every dependent service.
+# Gotchas      :
+#   - PITFALLS #1 — image uses UID 999 ; restricted-v2 SCC would block it.
+#   - PITFALLS #3 — single-node so no rs.initiate() race; for replicaset
+#     deployment, init job must wait until quorum is up.
+#   - The mongo-init-databases Job creates app users in each DB so OpenCRVS
+#     services authenticate as `app` (not root). The root-password is only
+#     used by the Job itself.
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-headless
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: mongo
+    app.kubernetes.io/component: infra
+spec:
+  clusterIP: None
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: mongo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: mongo
+    app.kubernetes.io/component: infra
+spec:
+  type: ClusterIP
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: mongo
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: mongo
+    app.kubernetes.io/component: infra
+  annotations:
+    iun.sn/image-tag-verified: "2026-06-03 — mongo:4.4 OpenCRVS 1.9 supported version (PITFALLS #1)"
+spec:
+  serviceName: mongo-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mongo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mongo
+        app.kubernetes.io/component: infra
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: mongo
+          image: docker.io/mongo:4.4
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: mongo
+              containerPort: 27017
+              protocol: TCP
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-creds
+                  key: root-username
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-creds
+                  key: root-password
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - mongo --quiet --eval 'db.runCommand({ping:1}).ok' | grep -q 1
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - mongo --quiet --eval 'db.runCommand({ping:1}).ok' | grep -q 1
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1500m"
+              memory: "2Gi"
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ocs-external-storagecluster-ceph-rbd
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mongo-init-databases
+  namespace: iun-opencrvs-dev
+  labels:
+    app.kubernetes.io/name: mongo-init-databases
+    app.kubernetes.io/component: infra
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mongo-init-databases
+      annotations:
+        openshift.io/required-scc: iun-anyuid-caps
+    spec:
+      serviceAccountName: default
+      restartPolicy: OnFailure
+      imagePullSecrets:
+        - name: docker-hub-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: mongo-init
+          image: docker.io/mongo:4.4
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MONGO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-creds
+                  key: root-username
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-creds
+                  key: root-password
+            - name: MONGO_APP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-creds
+                  key: app-username
+            - name: MONGO_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-creds
+                  key: app-password
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "Waiting for mongo-headless to accept connections..."
+              for i in $(seq 1 30); do
+                if mongo --host mongo-headless --quiet --eval 'db.runCommand({ping:1}).ok' -u "$MONGO_ROOT_USER" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin 2>/dev/null | grep -q 1; then
+                  echo "Mongo is up after ${i} attempt(s)."
+                  break
+                fi
+                sleep 5
+              done
+              for DB in hearth-dev user-mgnt application-config webhooks notification metrics performance events; do
+                echo "Provisioning DB $DB and user app..."
+                mongo --host mongo-headless -u "$MONGO_ROOT_USER" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --quiet "$DB" <<EOF
+              db.createUser({
+                user: "$MONGO_APP_USER",
+                pwd:  "$MONGO_APP_PASSWORD",
+                roles:[ { role: "dbOwner", db: "$DB" } ]
+              });
+              EOF
+              done
+              echo "All databases provisioned."
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

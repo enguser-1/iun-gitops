@@ -1,0 +1,131 @@
+# ============================================================================
+# Frontend OpenIMIS - nginx 8080 (corrige PITFALLS §4)
+# ============================================================================
+# Corrections vs ancien openimis-dev :
+#   - ConfigMap nginx-listen-8080 override /etc/nginx/conf.d/default.conf
+#     -> listen 8080 (port non-privilegie, compat SCC restricted-v2)
+#   - Service port 80 -> targetPort 8080
+#   - Route OCP edge TLS (cf 09-route-edge.yaml) - TLS termine Router, PAS pod
+#   - PAS de CAP_NET_BIND_SERVICE, PAS de privileged
+#
+# 2 replicas (HA legere).
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: openimis-frontend
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: frontend
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openimis-frontend
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openimis
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openimis
+        app.kubernetes.io/component: frontend
+      annotations:
+        openshift.io/required-scc: restricted-v2
+    spec:
+      # MVP : openimis-fe:25.10 SEULEMENT sur compute01 - pin strict.
+      # 2 replicas tomberont sur le meme node (HA rolling-update OK, HA node-fail KO).
+      nodeSelector:
+        kubernetes.io/hostname: compute01.origins.heritage.africa
+      containers:
+        - name: frontend
+          image: ghcr.io/openimis/openimis-fe:25.10
+          imagePullPolicy: IfNotPresent
+          # OVERRIDE de l'entrypoint /script/entrypoint.sh qui requiert root :
+          #   - mkdir /etc/letsencrypt/... (besoin write /etc)
+          #   - rm /etc/nginx/conf.d/default.conf (besoin write /etc/nginx/conf.d)
+          # SCC restricted-v2 / anyuid donne un UID non-root sans perms sur /etc.
+          # Bypass complet : on lance nginx direct avec notre config mountee en
+          # subPath overlay sur /etc/nginx/conf.d/default.conf (read-only OK,
+          # nginx n'ecrit pas dans son conf.d).
+          # Tradeoff : pas d'envsubst des env vars (config statique). Acceptable
+          # car URLs frontend/backend sont fixes en cluster.
+          command: ["nginx", "-g", "daemon off;"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            # subPath overlay le fichier unique - laisse le reste du dir
+            # read-write pour nginx (acces logs, pid, etc.).
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: openimis.conf
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+            - name: nginx-tmp
+              mountPath: /tmp
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            # PAS de seccompProfile : meme contrainte SCC qu'en 02-redis
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: openimis-fe-nginx-conf
+            items:
+              - key: openimis.conf
+                path: openimis.conf
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}

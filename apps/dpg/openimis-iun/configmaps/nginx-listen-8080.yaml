@@ -1,0 +1,78 @@
+# ============================================================================
+# Template openimis.conf - override de /conf/openimis.conf de l'image
+# ============================================================================
+# L'image openimis-fe:25.10 a un entrypoint custom (/script/entrypoint.sh)
+# qui fait :
+#   1. rm /etc/nginx/conf.d/default.conf (real file de nginx upstream)
+#   2. envsubst < /conf/openimis.conf > /etc/nginx/conf.d/openIMIS.conf
+#   3. exec nginx
+#
+# Le template baked dans l'image hardcode `listen 443 ssl; listen 80;` -
+# 2 ports privilegies non-bindable avec SCC restricted/anyuid sans CAP_NET_BIND_SERVICE.
+#
+# Solution : on mount notre version a /conf/openimis.conf (subPath, overlay 1 fichier).
+# L'entrypoint envsubst depuis NOTRE version et nginx ecoute sur 8080.
+#
+# Pas de placeholder ${UPPER_VAR} dans notre config -> envsubst est un no-op.
+# Les nginx vars en lowercase ($host, $uri, $scheme, etc.) sont preservees.
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openimis-fe-nginx-conf
+  namespace: iun-openimis-dev
+  labels:
+    app.kubernetes.io/name: openimis
+    app.kubernetes.io/component: frontend
+data:
+  openimis.conf: |
+    server {
+        listen 8080 default_server;
+        server_name _;
+
+        client_max_body_size 100M;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # API GraphQL + REST
+        location /api/ {
+            proxy_pass http://openimis-backend.iun-openimis-dev.svc.cluster.local:8000/api/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 120s;
+        }
+
+        # REST mobile API (root_mobileapi=rest)
+        location /rest/ {
+            proxy_pass http://openimis-backend.iun-openimis-dev.svc.cluster.local:8000/rest/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # OpenSearch Dashboards (basepath /opensearch)
+        location /opensearch/ {
+            proxy_pass http://openimis-opensearch-dashboards.iun-openimis-dev.svc.cluster.local:5601/opensearch/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # React SPA front prefix (PUBLIC_URL=front au build React).
+        # L'entrypoint upstream creait un symlink /usr/share/nginx/html/front
+        # -> /usr/share/nginx/html. Comme on bypass l'entrypoint, on remap
+        # via alias : /front/static/x.js -> /usr/share/nginx/html/static/x.js.
+        location /front/ {
+            alias /usr/share/nginx/html/;
+            try_files $uri $uri/ /index.html;
+        }
+
+        # SPA fallback root
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }

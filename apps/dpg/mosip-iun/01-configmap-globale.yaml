@@ -1,0 +1,141 @@
+# ============================================================================
+# 01-configmap-globale.yaml — THE global ConfigMap consumed by every MOSIP svc
+# ----------------------------------------------------------------------------
+# Purpose      : single source of truth for hostnames, namespaces, and the
+#                UIN policy keys. Every Java boot service references this via
+#                envFrom: configMapRef.name=global.
+# Dependencies : none (apply first, after the namespace bootstrap).
+# Override     : Lead patches via overlays/<env>/cm-patches.yaml; only the
+#                `mosip.kernel.uin.length` and the *-host placeholders below
+#                are expected to drift between dev/stg/prod.
+# Gotchas      :
+#   - Keys are split between (a) upstream k8s-infra 25-key sample and
+#     (b) ~30 extra keys required by mosip-helm/charts/*/envFrom in v1.2.0.x.
+#   - `*.disabled.local` placeholders are intentional — the services aren't
+#     deployed in the MVP. DO NOT remove them; the Java apps will NPE on
+#     missing env vars (cf. PITFALLS.md §3).
+#   - `softhsm.kernel.security.pin` is DEV-ONLY. In prod, this comes from a
+#     real HSM and goes through Vault, not a CM.
+#   - ConfigMap data values MUST be strings — that's why numerics are quoted.
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: global
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/name: global
+    app.kubernetes.io/component: configuration
+    iun.sn/role: mosip-global-config
+  annotations:
+    iun.sn/canonical-source: "github.com/mosip/k8s-infra/release-1.2.0.x/mosip/global_configmap.yaml.sample"
+    iun.sn/upstream-keys: "25 keys from upstream, +30 added for Helm chart envFrom compat (cf. PITFALLS.md section 1)"
+    iun.sn/uin-decision: "mosip.kernel.uin.length=10 - ADR-R01 2026-05-25"
+    iun.sn/tor-ref: "section 4.1"
+data:
+  # ==========================================================================
+  # SECTION 1 - Installation identity (upstream sample)
+  # ==========================================================================
+  installation-name: "iun-sn-dev"
+  installation-domain: "iun.sn"
+  mosip-version: "1.2.0.1"
+  is_glowroot_env: "absent"
+
+  # ==========================================================================
+  # SECTION 2 - Public hostnames (upstream sample)
+  # ==========================================================================
+  # Production-facing FQDN — Lead overrides per env via overlay.
+  mosip-api-host: "api.iun.sn"
+  mosip-api-internal-host: "api-internal.iun-mosip-dev.svc.cluster.local"
+
+  # Services NOT deployed in MVP — disabled.local placeholders.
+  # Removing these breaks Spring property resolution in Java boot services.
+  mosip-prereg-host: "prereg.disabled.local"
+  mosip-pmp-host: "pmp.disabled.local"
+  mosip-resident-host: "resident.disabled.local"
+  mosip-admin-host: "admin.disabled.local"
+  mosip-regclient-host: "regclient.disabled.local"
+  mosip-activemq-host: "activemq.disabled.local"
+  mosip-kibana-host: "kibana.disabled.local"
+  mosip-smtp-host: "smtp.disabled.local"
+  mosip-compliance-host: "compliance.disabled.local"
+  mosip-esignet-host: "esignet.disabled.local"
+  mosip-signup-host: "signup.disabled.local"
+  mosip-healthservices-host: "healthservices.disabled.local"
+  mosip-injiweb-host: "injiweb.disabled.local"
+  mosip-injiverify-host: "injiverify.disabled.local"
+  mosip-injicertify-host: "injicertify.disabled.local"
+
+  # ==========================================================================
+  # SECTION 3 - Infrastructure hostnames (in-cluster, real)
+  # ==========================================================================
+  mosip-postgres-host: "mosip-postgres.iun-mosip-dev.svc.cluster.local"
+  mosip-kafka-host: "kafka.iun-mosip-dev.svc.cluster.local"
+  mosip-minio-host: "minio.disabled.local"
+  mosip-object-store-host: "minio.disabled.local"
+
+  # ==========================================================================
+  # SECTION 4 - IAM hostnames (placeholders - Lead will provide real values)
+  # ==========================================================================
+  mosip-iam-external-host: "sso.apps.origins.heritage.africa"
+  mosip-iam-internal-host: "keycloak.openshift-sso.svc.cluster.local"
+
+  # ==========================================================================
+  # SECTION 5 - Helm-chart-only keys (NOT in upstream sample but required
+  #             by mosip-helm/charts/*/envFrom in release-1.2.0.x)
+  # ==========================================================================
+  mosip-file-server-host: "api-internal.iun-mosip-dev.svc.cluster.local"
+  mosip-onboarder-host: "onboarder.disabled.local"
+  mosip-idp-host: "idp.disabled.local"
+  mosip-collab-host: "collab.disabled.local"
+
+  # ==========================================================================
+  # SECTION 6 - In-cluster routing (namespaces + URLs)
+  # ==========================================================================
+  mosip-namespace-kernel: "iun-mosip-dev"
+  mosip-namespace-keymanager: "iun-mosip-dev"
+  mosip-namespace-artifactory: "iun-mosip-dev"
+  mosip-namespace-config-server: "iun-mosip-dev"
+  mosip-config-server-url: "http://config-server.iun-mosip-dev.svc.cluster.local:8888"
+  mosip-artifactory-url: "http://artifactory-server.iun-mosip-dev.svc.cluster.local:8080"
+
+  # ==========================================================================
+  # SECTION 7 - SoftHSM PINs - DEV ONLY
+  # ==========================================================================
+  # In prod, these come from Vault / a real HSM driver. NEVER leave this in
+  # a non-dev cluster.
+  softhsm.kernel.security.pin: "iun-dev-pin"
+  softhsm.ida.security.pin: "iun-dev-pin"
+
+  # ==========================================================================
+  # SECTION 8 - Spring profile + logging
+  # ==========================================================================
+  spring-profiles-active: "default"
+  activeProfileEnv: "default"
+  logging-level-root: "INFO"
+  logging-level-mosip: "DEBUG"
+
+  # ==========================================================================
+  # SECTION 9 - UIN POLICY (ADR-R01 2026-05-25)
+  # ==========================================================================
+  # ***********************************************************************
+  # *  THE KEY THAT IMPLEMENTS THE LEAD DECISION:                          *
+  # *  mosip.kernel.uin.length = 10 (9 random digits + 1 Verhoeff checksum)*
+  # *  See: docs/adr/ADR-R01-uin-length.md                                 *
+  # ***********************************************************************
+  mosip.kernel.uin.length: "10"
+
+  # Generation knobs — sized for dev. Lead bumps for load tests / prod.
+  mosip.kernel.uin.uins-to-generate: "1000"
+  mosip.kernel.uin.min-unused-threshold: "100"
+
+  # Format validation — MOSIP defaults; Lead may relax `repeating-limit` to
+  # "1" (per ADR-R01 recommendation) after the first batch test.
+  mosip.kernel.uin.length.sequence-limit: "3"
+  mosip.kernel.uin.length.repeating-block-limit: "2"
+  mosip.kernel.uin.length.repeating-limit: "2"
+  mosip.kernel.uin.length.reverse-digits-limit: "5"
+  mosip.kernel.uin.length.digits-limit: "5"
+  mosip.kernel.uin.length.conjugative-even-digits-limit: "3"
+  mosip.kernel.uin.not-start-with: "0,1"
+  mosip.kernel.uin.restricted-numbers: "786,666"
