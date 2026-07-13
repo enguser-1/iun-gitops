@@ -1,132 +1,213 @@
-# ============================================================================
-# auth.yaml — OpenCRVS auth service (port 4040)
-# ----------------------------------------------------------------------------
-# Purpose      : login + JWT issuer + token verify. Reads jwt-private.pem to
-#                sign RS256 tokens (Node 22 enforces >= 2048 bits per
-#                PITFALLS #15).
-# Dependencies : Mongo Ready (user-mgnt DB) ; Redis Ready ; jwt-keys Secret.
-# Override     : Image fallback docker.io/opencrvs/ocrvs-auth:v1.9.13 if
-#                ghcr.io is unreachable (PITFALLS #13).
-# Gotchas      :
-#   - PITFALLS #7 — issued JWTs can exceed 8 KiB if claims include large
-#     role tables. Document the IngressController bufferSize patch in README
-#     if 502 BadGateway start appearing.
-#   - PITFALLS #15 — RSA key must be >= 2048 bits.
-# ============================================================================
-apiVersion: v1
-kind: Service
-metadata:
-  name: auth
-  namespace: iun-opencrvs-dev
-  labels:
-    app.kubernetes.io/name: auth
-    app.kubernetes.io/component: opencrvs
-spec:
-  type: ClusterIP
-  ports:
-    - name: http
-      port: 4040
-      targetPort: 4040
-      protocol: TCP
-  selector:
-    app.kubernetes.io/name: auth
----
+# RECONCILED FROM LIVE 2026-07-13 (sync-prod-gitops.ps1)
+# NODE_ENV=production + ELASTIC_APM_ACTIVE=false + env completes (envalid).
+# auth/search : logger-fix monte en subPath (cf. ../18-logger-recursion-fix.yaml).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    iun.sn/image-tag-verified: 2026-06-03 ΓÇö ghcr.io/opencrvs/ocrvs-auth:v1.9.13 (released
+      2026-05-08)
+  labels:
+    app.kubernetes.io/component: opencrvs
+    app.kubernetes.io/name: auth
   name: auth
   namespace: iun-opencrvs-dev
-  labels:
-    app.kubernetes.io/name: auth
-    app.kubernetes.io/component: opencrvs
-  annotations:
-    iun.sn/image-tag-verified: "2026-06-03 — ghcr.io/opencrvs/ocrvs-auth:v1.9.13 (released 2026-05-08)"
 spec:
+  progressDeadlineSeconds: 600
   replicas: 1
-  strategy:
-    type: RollingUpdate
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app.kubernetes.io/name: auth
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
   template:
     metadata:
-      labels:
-        app.kubernetes.io/name: auth
-        app.kubernetes.io/component: opencrvs
       annotations:
         openshift.io/required-scc: iun-anyuid-caps
+      labels:
+        app.kubernetes.io/component: opencrvs
+        app.kubernetes.io/name: auth
     spec:
-      serviceAccountName: default
+      containers:
+      - env:
+        - name: NODE_ENV
+          value: production
+        - name: AUTH_HOST
+          value: 0.0.0.0
+        - name: AUTH_PORT
+          value: "4040"
+        - name: MONGO_APP_USER
+          valueFrom:
+            secretKeyRef:
+              key: app-username
+              name: mongodb-creds
+        - name: MONGO_APP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: app-password
+              name: mongodb-creds
+        - name: MONGO_URL
+          value: mongodb://$(MONGO_APP_USER):$(MONGO_APP_PASSWORD)@mongo-headless:27017/user-mgnt
+        - name: REDIS_PASSWORD
+          value: ItspSgnwbTucE1lkbVqbBxbc0FGAlVVS
+        - name: REDIS_HOST
+          value: redis
+        - name: REDIS_PORT
+          value: "6379"
+        - name: USER_MANAGEMENT_URL
+          value: http://user-mgnt:3030/
+        - name: NOTIFICATION_URL
+          value: http://notification:2020/
+        - name: COUNTRY_CONFIG_URL
+          value: http://countryconfig:3040/
+        - name: CERT_PRIVATE_KEY_PATH
+          value: /secrets/jwt-private.pem
+        - name: CERT_PUBLIC_KEY_PATH
+          value: /secrets/jwt-public.pem
+        - name: NODE_OPTIONS
+          value: --max-old-space-size=2048 --dns-result-order=ipv4first
+        - name: LOG_LEVEL
+          value: debug
+        - name: HAPI_LOG_LEVEL
+          value: debug
+        - name: METRICS_URL
+          value: http://metrics:1050/
+        - name: CONFIG_URL
+          value: http://config:2021/
+        - name: CONFIG_TOKEN_EXPIRY_SECONDS
+          value: "604800"
+        - name: CONFIG_SYSTEM_TOKEN_EXPIRY_SECONDS
+          value: "600"
+        - name: CONFIG_ACTION_CONFIRMATION_TOKEN_EXPIRY_SECONDS
+          value: "600"
+        - name: CONFIG_SMS_CODE_EXPIRY_SECONDS
+          value: "600"
+        - name: QA_ENV
+          value: "true"
+        - name: HOST
+          value: 0.0.0.0
+        - name: COUNTRY_CONFIG_URL_INTERNAL
+          value: http://countryconfig:3040/
+        - name: USER_MANAGEMENT_URL_INTERNAL
+          value: http://user-mgnt:3030/
+        - name: CONFIG_URL_INTERNAL
+          value: http://config:2021/
+        - name: NOTIFICATION_URL_INTERNAL
+          value: http://notification:2020/
+        - name: METRICS_URL_INTERNAL
+          value: http://metrics:1050/
+        - name: REDIS_USERNAME
+          value: default
+        - name: CLIENT_APP_URL
+          value: https://iun-opencrvs-app-dev.apps.origins.heritage.africa/
+        - name: COUNTRY_CONFIG_URL_EXTERNAL
+          value: https://iun-opencrvs-app-dev.apps.origins.heritage.africa/api/countryconfig
+        - name: DOMAIN
+          value: apps.origins.heritage.africa
+        - name: LOGIN_URL
+          value: https://iun-civil-login-v2-dev.apps.origins.heritage.africa
+        - name: ELASTIC_APM_ACTIVE
+          value: "false"
+        image: ghcr.io/opencrvs/ocrvs-auth:v1.9.13
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /ping
+            port: 4040
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: auth
+        ports:
+        - containerPort: 4040
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /ping
+            port: 4040
+            scheme: HTTP
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: "1"
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 512Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/packages/commons/build/dist/common/logger.js
+          name: logger-fix
+          readOnly: true
+          subPath: logger.js
+        - mountPath: /app/packages/auth/build/dist/src/features/authenticate/handler.js
+          name: auth-handler-patch
+          subPath: handler.js
+        - mountPath: /secrets
+          name: jwt-keys
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
       securityContext:
+        fsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
-        fsGroup: 1000
-      containers:
-        - name: auth
-          image: ghcr.io/opencrvs/ocrvs-auth:v1.9.13
-          imagePullPolicy: IfNotPresent
-          ports:
-            - name: http
-              containerPort: 4040
-              protocol: TCP
-          env:
-            - name: NODE_ENV
-              value: "development"
-            - name: AUTH_HOST
-              value: "0.0.0.0"
-            - name: AUTH_PORT
-              value: "4040"
-            - name: MONGO_APP_USER
-              valueFrom: { secretKeyRef: { name: mongodb-creds, key: app-username } }
-            - name: MONGO_APP_PASSWORD
-              valueFrom: { secretKeyRef: { name: mongodb-creds, key: app-password } }
-            - name: MONGO_URL
-              value: "mongodb://$(MONGO_APP_USER):$(MONGO_APP_PASSWORD)@mongo-headless:27017/user-mgnt"
-            - name: REDIS_PASSWORD
-              valueFrom: { secretKeyRef: { name: redis-creds, key: password } }
-            - name: REDIS_HOST
-              value: "redis"
-            - name: REDIS_PORT
-              value: "6379"
-            - name: USER_MANAGEMENT_URL
-              value: "http://user-mgnt:3030"
-            - name: NOTIFICATION_URL
-              value: "http://notification:2020"
-            - name: COUNTRY_CONFIG_URL
-              value: "http://countryconfig:3040"
-            - name: CERT_PRIVATE_KEY_PATH
-              value: "/secrets/jwt-private.pem"
-            - name: CERT_PUBLIC_KEY_PATH
-              value: "/secrets/jwt-public.pem"
-          volumeMounts:
-            - name: jwt-keys
-              mountPath: /secrets
-              readOnly: true
-          readinessProbe:
-            httpGet:
-              path: /ping
-              port: 4040
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 6
-          livenessProbe:
-            httpGet:
-              path: /ping
-              port: 4040
-            initialDelaySeconds: 60
-            periodSeconds: 20
-            timeoutSeconds: 5
-            failureThreshold: 6
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "256Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
+      serviceAccount: default
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 30
       volumes:
-        - name: jwt-keys
-          secret:
-            secretName: jwt-keys
-            defaultMode: 0400
+      - configMap:
+          defaultMode: 420
+          name: opencrvs-logger-fix
+        name: logger-fix
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: handler.js
+            path: handler.js
+          name: auth-handler-patch
+        name: auth-handler-patch
+      - name: jwt-keys
+        secret:
+          defaultMode: 256
+          secretName: jwt-keys
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: opencrvs
+    app.kubernetes.io/name: auth
+  name: auth
+  namespace: iun-opencrvs-dev
+spec:
+  clusterIP: 172.30.21.44
+  clusterIPs:
+  - 172.30.21.44
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 4040
+    protocol: TCP
+    targetPort: 4040
+  selector:
+    app.kubernetes.io/name: auth
+  sessionAffinity: None
+  type: ClusterIP

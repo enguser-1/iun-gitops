@@ -1,0 +1,83 @@
+# ============================================================================
+# 18-logger-recursion-fix.yaml - workaround bug upstream OpenCRVS (<= v1.9.15)
+# ----------------------------------------------------------------------------
+# packages/commons logger : filterHealthCheckLogs rappelle logger.debug (hooke)
+# sur tout log contenant 'get /ping 200' -> recursion infinie -> exit 1 en
+# production a la premiere probe readiness. Touche auth et search.
+# Ce logger.js patche remplace 'return logger.debug(...args)' par 'return'
+# (= jeter les logs /ping, l'intention du filtre). Monte en subPath sur
+# /app/packages/commons/build/dist/common/logger.js (deploys auth + search).
+# Original : cowork/reports/logger.js.original. A RETIRER quand upstream fixe.
+# ============================================================================
+apiVersion: v1
+data:
+  logger.js: |-
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.logger = void 0;
+    exports.maskEmail = maskEmail;
+    exports.maskSms = maskSms;
+    /*
+     * This Source Code Form is subject to the terms of the Mozilla Public
+     * License, v. 2.0. If a copy of the MPL was not distributed with this
+     * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+     *
+     * OpenCRVS is also distributed under the terms of the Civil Registration
+     * & Healthcare Disclaimer located at http://opencrvs.org/license.
+     *
+     * Copyright (C) The OpenCRVS Authors located at https://github.com/opencrvs/opencrvs-core/blob/master/AUTHORS.
+     */
+    const pino_1 = require("pino");
+    function filterHealthCheckLogs(args, method) {
+        const logger = this;
+        for (const arg of args) {
+            if (typeof arg === 'string' && arg.includes('get /ping 200')) {
+                if (logger.debug) {
+                    return; // IUN patch 2026-07-13: drop /ping logs ??? upstream infinite recursion (hooked debug re-enters filterHealthCheckLogs), present <= v1.9.15
+                }
+            }
+        }
+        return method.apply(this, args);
+    }
+    exports.logger = process.env.NODE_ENV === 'production'
+        ? (0, pino_1.default)({
+            level: 'info',
+            redact: [
+                'req.headers.authorization',
+                'req.remoteAddress',
+                "req.headers['x-real-ip']"
+            ],
+            hooks: { logMethod: filterHealthCheckLogs }
+        })
+        : (0, pino_1.default)({
+            level: 'debug',
+            transport: {
+                target: 'pino-pretty',
+                options: {
+                    colorize: true,
+                    ignore: 'pid,hostname'
+                }
+            },
+            hooks: { logMethod: filterHealthCheckLogs }
+        });
+    const level = process.env.NODE_ENV === 'test' ? 'silent' : process.env.LOG_LEVEL;
+    if (level) {
+        exports.logger.level = level;
+    }
+    function maskEmail(email) {
+        if (email.length <= 10)
+            return `${email.at(0)}${'*'.repeat(email.length - 2)}${email.at(-1)}`;
+        // The regex matches everything EXCEPT the first 3 and last 4 characters.
+        return email.replace(/(?<=.{3}).*(?=.{4})/, (match) => '*'.repeat(match.length));
+    }
+    function maskSms(sms) {
+        if (sms.length <= 8)
+            return `${sms.at(0)}${'*'.repeat(sms.length - 2)}${sms.at(-1)}`;
+        // The regex matches everything EXCEPT the first 3 and last 2 characters.
+        return sms.replace(/(?<=.{3}).*(?=.{2})/, (match) => '*'.repeat(match.length));
+    }
+    //# sourceMappingURL=logger.js.map
+kind: ConfigMap
+metadata:
+  name: opencrvs-logger-fix
+  namespace: iun-opencrvs-dev

@@ -1,130 +1,164 @@
-# ============================================================================
-# workflow.yaml — OpenCRVS workflow service (port 5050)
-# ----------------------------------------------------------------------------
-# Purpose      : declare / validate / register / certify state transitions.
-#                Emits BIRTH_REGISTERED webhook on register transition.
-# Dependencies : Hearth Ready, Mongo (events DB), search, webhooks.
-# Override     : Fallback image docker.io/opencrvs/ocrvs-workflow:v1.9.13.
-# Gotchas      :
-#   - The BIRTH_REGISTERED event is routed by webhooks service to the
-#     mosip-api middleware (which then calls iun-uin-service for the UIN).
-# ============================================================================
-apiVersion: v1
-kind: Service
-metadata:
-  name: workflow
-  namespace: iun-opencrvs-dev
-  labels:
-    app.kubernetes.io/name: workflow
-    app.kubernetes.io/component: opencrvs
-spec:
-  type: ClusterIP
-  ports:
-    - name: http
-      port: 5050
-      targetPort: 5050
-      protocol: TCP
-  selector:
-    app.kubernetes.io/name: workflow
----
+# RECONCILED FROM LIVE 2026-07-13 (sync-prod-gitops.ps1)
+# NODE_ENV=production + ELASTIC_APM_ACTIVE=false + env completes (envalid).
+# auth/search : logger-fix monte en subPath (cf. ../18-logger-recursion-fix.yaml).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    iun.sn/image-tag-verified: 2026-06-03 ΓÇö ghcr.io/opencrvs/ocrvs-workflow:v1.9.13
+  labels:
+    app.kubernetes.io/component: opencrvs
+    app.kubernetes.io/name: workflow
   name: workflow
   namespace: iun-opencrvs-dev
-  labels:
-    app.kubernetes.io/name: workflow
-    app.kubernetes.io/component: opencrvs
-  annotations:
-    iun.sn/image-tag-verified: "2026-06-03 — ghcr.io/opencrvs/ocrvs-workflow:v1.9.13"
 spec:
+  progressDeadlineSeconds: 600
   replicas: 1
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app.kubernetes.io/name: workflow
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
   template:
     metadata:
-      labels:
-        app.kubernetes.io/name: workflow
-        app.kubernetes.io/component: opencrvs
       annotations:
         openshift.io/required-scc: iun-anyuid-caps
+      labels:
+        app.kubernetes.io/component: opencrvs
+        app.kubernetes.io/name: workflow
     spec:
-      serviceAccountName: default
+      containers:
+      - env:
+        - name: NODE_ENV
+          value: production
+        - name: HOST
+          value: 0.0.0.0
+        - name: PORT
+          value: "5050"
+        - name: MONGO_APP_USER
+          valueFrom:
+            secretKeyRef:
+              key: app-username
+              name: mongodb-creds
+        - name: MONGO_APP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: app-password
+              name: mongodb-creds
+        - name: MONGO_URL
+          value: mongodb://app:yJajKfi9dHz91tzDGQHuhDIAKiqHAGEy@mongo-headless:27017/events?authSource=user-mgnt
+        - name: HEARTH_URL
+          value: http://hearth:3447/fhir
+        - name: AUTH_URL
+          value: http://auth:4040/
+        - name: USER_MANAGEMENT_URL
+          value: http://user-mgnt:3030/
+        - name: SEARCH_URL
+          value: http://search:9090/
+        - name: WEBHOOKS_URL
+          value: http://webhooks:2525/
+        - name: NOTIFICATION_URL
+          value: http://notification:2020/
+        - name: METRICS_URL
+          value: http://metrics:1050/
+        - name: COUNTRY_CONFIG_URL
+          value: http://countryconfig:3040/
+        - name: CERT_PUBLIC_KEY_PATH
+          value: /secrets/jwt-public.pem
+        - name: NODE_OPTIONS
+          value: --max-old-space-size=2048 --dns-result-order=ipv4first
+        - name: FHIR_URL
+          value: http://hearth:3447/fhir
+        - name: APPLICATION_CONFIG_URL
+          value: http://config:2021/
+        - name: DOCUMENTS_URL
+          value: http://documents:9050/
+        - name: NOTIFICATION_SERVICE_URL
+          value: http://notification:2020/
+        - name: ELASTIC_APM_ACTIVE
+          value: "false"
+        image: ghcr.io/opencrvs/ocrvs-workflow:v1.9.13
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /ping
+            port: 5050
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: workflow
+        ports:
+        - containerPort: 5050
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /ping
+            port: 5050
+            scheme: HTTP
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: "1"
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 512Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /secrets
+          name: jwt-keys
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
       securityContext:
+        fsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
-        fsGroup: 1000
-      containers:
-        - name: workflow
-          image: ghcr.io/opencrvs/ocrvs-workflow:v1.9.13
-          imagePullPolicy: IfNotPresent
-          ports:
-            - name: http
-              containerPort: 5050
-              protocol: TCP
-          env:
-            - name: NODE_ENV
-              value: "development"
-            - name: HOST
-              value: "0.0.0.0"
-            - name: PORT
-              value: "5050"
-            - name: MONGO_APP_USER
-              valueFrom: { secretKeyRef: { name: mongodb-creds, key: app-username } }
-            - name: MONGO_APP_PASSWORD
-              valueFrom: { secretKeyRef: { name: mongodb-creds, key: app-password } }
-            - name: MONGO_URL
-              value: "mongodb://$(MONGO_APP_USER):$(MONGO_APP_PASSWORD)@mongo-headless:27017/events"
-            - name: FHIR_URL
-              value: "http://hearth:3447/fhir"
-            - name: AUTH_URL
-              value: "http://auth:4040/"
-            - name: USER_MANAGEMENT_URL
-              value: "http://user-mgnt:3030/"
-            - name: SEARCH_URL
-              value: "http://search:9090/"
-            - name: WEBHOOKS_URL
-              value: "http://webhooks:2525/"
-            - name: NOTIFICATION_URL
-              value: "http://notification:2020/"
-            - name: METRICS_URL
-              value: "http://metrics:1050/"
-            - name: COUNTRY_CONFIG_URL
-              value: "http://countryconfig:3040/"
-            - name: APPLICATION_CONFIG_URL
-              value: "http://config:2021/"
-            - name: CERT_PUBLIC_KEY_PATH
-              value: "/secrets/jwt-public.pem"
-          volumeMounts:
-            - name: jwt-keys
-              mountPath: /secrets
-              readOnly: true
-          readinessProbe:
-            httpGet:
-              path: /ping
-              port: 5050
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 6
-          livenessProbe:
-            httpGet:
-              path: /ping
-              port: 5050
-            initialDelaySeconds: 60
-            periodSeconds: 20
-            timeoutSeconds: 5
-            failureThreshold: 6
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "256Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
+      serviceAccount: default
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 30
       volumes:
-        - name: jwt-keys
-          secret:
-            secretName: jwt-keys
-            defaultMode: 0400
+      - name: jwt-keys
+        secret:
+          defaultMode: 256
+          secretName: jwt-keys
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: opencrvs
+    app.kubernetes.io/name: workflow
+  name: workflow
+  namespace: iun-opencrvs-dev
+spec:
+  clusterIP: 172.30.109.43
+  clusterIPs:
+  - 172.30.109.43
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 5050
+    protocol: TCP
+    targetPort: 5050
+  selector:
+    app.kubernetes.io/name: workflow
+  sessionAffinity: None
+  type: ClusterIP

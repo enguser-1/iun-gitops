@@ -1,126 +1,165 @@
-# ============================================================================
-# registration.yaml — OpenCRVS registration / events service (port 5555)
-# ----------------------------------------------------------------------------
-# Purpose      : Birth/death/marriage event handler. NOTE : in the OpenCRVS
-#                1.9 monorepo, this is actually the `events` service ; the
-#                Lead asked for a Deployment named `registration` exposing
-#                the same logic at port 5555, so dependent services point to
-#                http://registration:3040.
-# Dependencies : Hearth Ready, Mongo (events DB), workflow, gateway,
-#                countryconfig.
-# Override     : Fallback image docker.io/opencrvs/ocrvs-events:v1.9.13.
-# Gotchas      :
-#   - Deployment name = registration ; container image = ocrvs-events.
-#   - Service exposes 3040 (Lead contract) routed to containerPort 5555.
-# ============================================================================
-apiVersion: v1
-kind: Service
-metadata:
-  name: registration
-  namespace: iun-opencrvs-dev
-  labels:
-    app.kubernetes.io/name: registration
-    app.kubernetes.io/component: opencrvs
-spec:
-  type: ClusterIP
-  ports:
-    - name: http
-      port: 3040
-      targetPort: 5555
-      protocol: TCP
-  selector:
-    app.kubernetes.io/name: registration
----
+# RECONCILED FROM LIVE 2026-07-13 (sync-prod-gitops.ps1)
+# NODE_ENV=production + ELASTIC_APM_ACTIVE=false + env completes (envalid).
+# auth/search : logger-fix monte en subPath (cf. ../18-logger-recursion-fix.yaml).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    iun.sn/image-tag-verified: 2026-06-03 ΓÇö ghcr.io/opencrvs/ocrvs-events:v1.9.13
+      (aliased registration per Lead contract)
+  labels:
+    app.kubernetes.io/component: opencrvs
+    app.kubernetes.io/name: registration
   name: registration
   namespace: iun-opencrvs-dev
-  labels:
-    app.kubernetes.io/name: registration
-    app.kubernetes.io/component: opencrvs
-  annotations:
-    iun.sn/image-tag-verified: "2026-06-03 — ghcr.io/opencrvs/ocrvs-events:v1.9.13 (aliased registration per Lead contract)"
 spec:
+  progressDeadlineSeconds: 600
   replicas: 1
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app.kubernetes.io/name: registration
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
   template:
     metadata:
-      labels:
-        app.kubernetes.io/name: registration
-        app.kubernetes.io/component: opencrvs
       annotations:
         openshift.io/required-scc: iun-anyuid-caps
+      labels:
+        app.kubernetes.io/component: opencrvs
+        app.kubernetes.io/name: registration
     spec:
-      serviceAccountName: default
+      containers:
+      - env:
+        - name: NODE_ENV
+          value: production
+        - name: HOST
+          value: 0.0.0.0
+        - name: PORT
+          value: "5555"
+        - name: MONGO_APP_USER
+          valueFrom:
+            secretKeyRef:
+              key: app-username
+              name: mongodb-creds
+        - name: MONGO_APP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: app-password
+              name: mongodb-creds
+        - name: MONGO_URL
+          value: mongodb://app:yJajKfi9dHz91tzDGQHuhDIAKiqHAGEy@mongo-headless:27017/events?authSource=user-mgnt
+        - name: HEARTH_URL
+          value: http://hearth:3447/fhir
+        - name: AUTH_URL
+          value: http://auth:4040
+        - name: GATEWAY_URL
+          value: http://gateway:7070
+        - name: WORKFLOW_URL
+          value: http://workflow:5050
+        - name: COUNTRY_CONFIG_URL
+          value: http://countryconfig:3040
+        - name: CERT_PUBLIC_KEY_PATH
+          value: /secrets/jwt-public.pem
+        - name: NODE_OPTIONS
+          value: --max-old-space-size=2048 --dns-result-order=ipv4first
+        - name: LOG_LEVEL
+          value: info
+        - name: CONFIG_URL
+          value: http://config:2021
+        - name: DOCUMENTS_URL
+          value: http://documents:9050
+        - name: ES_URL
+          value: http://elasticsearch:9200
+        - name: USER_MANAGEMENT_URL
+          value: http://user-mgnt:4002
+        - name: USER_MGNT_MONGO_URL
+          value: mongodb://app:yJajKfi9dHz91tzDGQHuhDIAKiqHAGEy@mongo-headless:27017/user-mgnt
+        - name: EVENTS_MONGO_URL
+          value: mongodb://app:yJajKfi9dHz91tzDGQHuhDIAKiqHAGEy@mongo-headless:27017/events
+        - name: EVENTS_POSTGRES_URL
+          value: postgresql://app:yJajKfi9dHz91tzDGQHuhDIAKiqHAGEy@postgres-events:5432/events
+        image: ghcr.io/opencrvs/ocrvs-events:v1.9.13
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /ping
+            port: 5555
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: registration
+        ports:
+        - containerPort: 5555
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /ping
+            port: 5555
+            scheme: HTTP
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: "1"
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 512Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /secrets
+          name: jwt-keys
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
       securityContext:
+        fsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
-        fsGroup: 1000
-      containers:
-        - name: registration
-          image: ghcr.io/opencrvs/ocrvs-events:v1.9.13
-          imagePullPolicy: IfNotPresent
-          ports:
-            - name: http
-              containerPort: 5555
-              protocol: TCP
-          env:
-            - name: NODE_ENV
-              value: "development"
-            - name: HOST
-              value: "0.0.0.0"
-            - name: PORT
-              value: "5555"
-            - name: MONGO_APP_USER
-              valueFrom: { secretKeyRef: { name: mongodb-creds, key: app-username } }
-            - name: MONGO_APP_PASSWORD
-              valueFrom: { secretKeyRef: { name: mongodb-creds, key: app-password } }
-            - name: MONGO_URL
-              value: "mongodb://$(MONGO_APP_USER):$(MONGO_APP_PASSWORD)@mongo-headless:27017/events"
-            - name: HEARTH_URL
-              value: "http://hearth:3447/fhir"
-            - name: AUTH_URL
-              value: "http://auth:4040"
-            - name: GATEWAY_URL
-              value: "http://gateway:7070"
-            - name: WORKFLOW_URL
-              value: "http://workflow:5050"
-            - name: COUNTRY_CONFIG_URL
-              value: "http://countryconfig:3040"
-            - name: CERT_PUBLIC_KEY_PATH
-              value: "/secrets/jwt-public.pem"
-          volumeMounts:
-            - name: jwt-keys
-              mountPath: /secrets
-              readOnly: true
-          readinessProbe:
-            httpGet:
-              path: /ping
-              port: 5555
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 6
-          livenessProbe:
-            httpGet:
-              path: /ping
-              port: 5555
-            initialDelaySeconds: 60
-            periodSeconds: 20
-            timeoutSeconds: 5
-            failureThreshold: 6
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "256Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
+      serviceAccount: default
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 30
       volumes:
-        - name: jwt-keys
-          secret:
-            secretName: jwt-keys
-            defaultMode: 0400
+      - name: jwt-keys
+        secret:
+          defaultMode: 256
+          secretName: jwt-keys
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: opencrvs
+    app.kubernetes.io/name: registration
+  name: registration
+  namespace: iun-opencrvs-dev
+spec:
+  clusterIP: 172.30.238.12
+  clusterIPs:
+  - 172.30.238.12
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 3040
+    protocol: TCP
+    targetPort: 5555
+  selector:
+    app.kubernetes.io/name: registration
+  sessionAffinity: None
+  type: ClusterIP
