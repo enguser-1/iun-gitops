@@ -1,5 +1,5 @@
 """
-iun-uin-bridge v2.6 (2026-07-13) — Birth + Death events.
+iun-uin-bridge v2.7 (2026-07-13) — Birth + Death events.
 - UIN : 10 digits Verhoeff -> SN-XXXX-XXXX-XX
 - BRN Birth : RRR-YYYY-NNNNNN
 - DRN Death : RRR-YYYY-DNNNNNN (D prefix pour distinguer Death)
@@ -9,6 +9,7 @@ iun-uin-bridge v2.6 (2026-07-13) — Birth + Death events.
 - v2.4 : QR + /records + tracking + informant
 - v2.5 : gestion Death events, mint UIN si absent + DRN. Endpoint /certificate/death/{id}
 - v2.6 : fix noms (given vides -> double espace), layout cert (Delivre a vs Officier)
+- v2.7 : design officiel SRMT (serif, vert forêt, or, filigrane baobab) — cert + /records
 - Idempotence : presence UIN_SYSTEM
 - Sequences : brn:{region}:{year} et drn:{region}:{year} dans db.iun_counters
 """
@@ -488,7 +489,7 @@ async def poller():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    log.info("iun-uin-bridge v2.6 demarre (DRY_RUN=%s, poll=%ss, uin=%s)",
+    log.info("iun-uin-bridge v2.7 demarre (DRY_RUN=%s, poll=%ss, uin=%s)",
              DRY_RUN, POLL_INTERVAL_S, UIN_SERVICE_URL)
     task = asyncio.create_task(poller())
     yield
@@ -639,7 +640,7 @@ async def render_birth_certificate(patient_id: str):
         return PlainTextResponse(f"Patient {patient_id} not found in Hearth", status_code=404)
 
     child_given, child_family = _patient_display_name(child)
-    child_gender = str(child.get("gender", ""))
+    child_gender = {"male": "Masculin", "female": "Féminin"}.get(str(child.get("gender", "")), str(child.get("gender", "")))
     child_birth = str(child.get("birthDate", ""))
 
     uin = brn = ""
@@ -732,60 +733,140 @@ _RECORDS_HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <title>IUN Senegal - Registre des actes de naissance</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>République du Sénégal — Registre des actes de naissance</title>
   <style>
     :root {
-      --sn-green: #00853F;
-      --sn-yellow: #FDEF42;
-      --sn-red: #E31B23;
-      --gray-bg: #f4f6f4;
-      --border: #d9e0d9;
+      --vert: #14522F; --vert-fonce: #0E3B22; --vert-header: #123D25;
+      --or: #C9A227; --or-sombre: #8A7430; --or-pale: #E4D5A2;
+      --creme: #F6F1DE; --creme-2: #EFE8CF; --blanc: #FFFDF6;
+      --encre: #26211A; --encre-2: #5C5442; --filet: #DACFA8;
     }
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background: var(--gray-bg); color: #1a1a1a; }
-    .flag { display: flex; height: 6px; }
-    .flag > div { flex: 1; }
-    .flag .g { background: var(--sn-green); }
-    .flag .y { background: var(--sn-yellow); }
-    .flag .r { background: var(--sn-red); }
-    header { background: white; padding: 24px 40px; border-bottom: 2px solid var(--sn-green); }
-    header h1 { margin: 0; color: var(--sn-green); font-size: 22px; }
-    header .subtitle { color: #666; font-size: 13px; margin-top: 4px; }
-    main { padding: 32px 40px; max-width: 1400px; margin: 0 auto; }
-    .stats { display: flex; gap: 20px; margin-bottom: 24px; }
-    .stat { background: white; padding: 16px 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex: 1; }
-    .stat .val { font-size: 28px; font-weight: 700; color: var(--sn-green); }
-    .stat .lbl { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
-    table { width: 100%; background: white; border-collapse: collapse; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; }
-    thead { background: var(--sn-green); color: white; }
-    th, td { padding: 12px 16px; text-align: left; font-size: 14px; border-bottom: 1px solid var(--border); }
-    tbody tr:hover { background: #f9fdf9; }
-    td.brn, td.uin { font-family: "SF Mono", Menlo, Consolas, monospace; font-weight: 600; }
-    td.uin { color: var(--sn-green); }
-    a.btn { display: inline-block; padding: 6px 14px; background: var(--sn-green); color: white; text-decoration: none; border-radius: 4px; font-size: 13px; font-weight: 500; }
-    a.btn:hover { background: #006630; }
-    footer { text-align: center; padding: 20px; color: #999; font-size: 12px; }
-    .empty { text-align: center; padding: 60px; color: #999; }
+    body { margin: 0; background: var(--creme); color: var(--encre);
+           font-family: Georgia, "Times New Roman", "Libre Baskerville", serif; }
+    header.bandeau { background: var(--vert-header); color: #F3EDD8; }
+    .bandeau-inner { max-width: 1180px; margin: 0 auto; padding: 12px 32px;
+      display: flex; align-items: center; gap: 16px; }
+    .drapeau { width: 30px; height: 20px; flex: none; border: 1px solid rgba(255,255,255,.35); }
+    .bandeau .rep { font-variant: small-caps; letter-spacing: 3px; font-size: 17px; font-weight: 600; }
+    .bandeau .devise { font-style: italic; font-size: 14px; color: #D8CFA9; margin-left: 10px; }
+    .masthead { background: var(--creme); border-bottom: 1px solid var(--filet); }
+    .mast-inner { max-width: 1180px; margin: 0 auto; padding: 30px 32px 22px;
+      display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .mast-inner h1 { margin: 0 0 6px; font-size: 38px; font-weight: 600; color: var(--vert-fonce); letter-spacing: 0.5px; }
+    .mast-inner .sous { margin: 0; font-size: 16.5px; font-style: italic; color: var(--encre-2); }
+    .sur-titre { font-variant: small-caps; letter-spacing: 3.5px; font-size: 15px; color: var(--or-sombre); margin-bottom: 4px; }
+    .emblem { flex: none; }
+    .filet-or { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+    .filet-or hr { border: none; border-top: 1px dashed var(--or); margin: 0; }
+    main { max-width: 1180px; margin: 0 auto; padding: 26px 32px 44px; }
+    .barre-outils { display: flex; align-items: end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+    .stats { display: flex; gap: 16px; }
+    .stat { background: var(--blanc); border: 1px solid var(--filet);
+            padding: 12px 20px 12px; min-width: 165px; }
+    .stat .num { font-variant: small-caps; letter-spacing: 3px; font-size: 12.5px; color: var(--or-sombre); }
+    .stat .val { font-size: 32px; font-weight: 600; color: var(--vert-fonce); line-height: 1.15; }
+    .stat .lbl { font-variant: small-caps; letter-spacing: 1.5px; font-size: 14px; color: var(--encre-2); }
+    .recherche { position: relative; }
+    .recherche input { width: 360px; max-width: 72vw; padding: 12px 14px 12px 38px;
+      border: 1px solid var(--filet); font-size: 16px;
+      background: var(--blanc); color: var(--encre); font-family: inherit; }
+    .recherche input:focus { outline: 2px solid var(--vert); outline-offset: -1px; }
+    .recherche svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      width: 15px; height: 15px; stroke: var(--or-sombre); fill: none; stroke-width: 2; }
+    .cadre { background: var(--blanc); border: 1px solid var(--filet); }
+    .cadre-titre { padding: 16px 20px 13px; border-bottom: 2px solid var(--vert);
+      display: flex; justify-content: space-between; align-items: baseline; }
+    .cadre-titre h2 { margin: 0; font-variant: small-caps; font-size: 21px; font-weight: 650;
+      color: var(--vert-fonce); letter-spacing: 2px; }
+    .cadre-titre .maj { font-size: 14px; font-style: italic; color: var(--encre-2); }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { text-align: left; padding: 12px 20px; font-size: 13.5px; letter-spacing: 2px;
+      font-variant: small-caps; color: var(--or-sombre); font-weight: 600;
+      border-bottom: 1px solid var(--filet); background: var(--creme-2); }
+    td { padding: 15px 20px; font-size: 16.5px; border-bottom: 1px solid var(--creme-2); }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: var(--creme); }
+    td.brn, td.uin { font-family: Consolas, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums; font-size: 15px; }
+    td.brn { color: var(--encre); font-weight: 600; }
+    td.uin { color: var(--vert); font-weight: 700; }
+    a.btn { display: inline-block; padding: 9px 18px; background: var(--vert);
+      color: #F5EFDC; text-decoration: none; font-variant: small-caps; letter-spacing: 1.8px;
+      font-size: 14.5px; font-weight: 600; border: 1px solid var(--vert-fonce); }
+    a.btn:hover { background: var(--vert-fonce); }
+    .empty { text-align: center; padding: 48px 20px 56px; color: var(--encre-2); font-size: 16.5px; font-style: italic; }
+    .empty svg { display: block; margin: 0 auto 10px; }
+    footer { border-top: 1px dashed var(--or); background: var(--creme); margin-top: 44px; }
+    .foot-inner { max-width: 1180px; margin: 0 auto; padding: 16px 32px;
+      display: flex; justify-content: space-between; font-size: 14px; font-style: italic; color: var(--encre-2); }
+    @media print { .recherche, a.btn { display: none; } }
   </style>
 </head>
 <body>
-  <div class="flag"><div class="g"></div><div class="y"></div><div class="r"></div></div>
-  <header>
-    <h1>REPUBLIQUE DU SENEGAL - Registre des actes de naissance</h1>
-    <div class="subtitle">Systeme d'etat civil numerique IUN - Ministere de l'Interieur et de la Securite Publique</div>
-  </header>
-  <main>
-    <div class="stats">
-      <div class="stat"><div class="val">{{totalRecords}}</div><div class="lbl">Actes de naissance</div></div>
-      <div class="stat"><div class="val">{{regionsUsed}}</div><div class="lbl">Regions couvertes</div></div>
-      <div class="stat"><div class="val">{{today}}</div><div class="lbl">Genere le</div></div>
+  <header class="bandeau">
+    <div class="bandeau-inner">
+      <svg class="drapeau" viewBox="0 0 30 20" aria-hidden="true">
+        <rect width="10" height="20" fill="#00853F"/><rect x="10" width="10" height="20" fill="#FDEF42"/><rect x="20" width="10" height="20" fill="#E31B23"/>
+        <path d="M15 6.2 16.05 9.1h3.05l-2.45 1.85.9 3-2.55-1.8-2.55 1.8.9-3-2.45-1.85h3.05Z" fill="#00853F"/>
+      </svg>
+      <span class="rep">République du Sénégal</span>
+      <span class="devise">Un Peuple · Un But · Une Foi</span>
     </div>
-    __TABLE__
+  </header>
+  <div class="masthead">
+    <div class="mast-inner">
+      <div class="marque">
+        <div class="sur-titre">Ministère de l'Intérieur et de la Sécurité Publique</div>
+        <h1>Registre des actes de naissance</h1>
+        <p class="sous">Direction Générale de l'État Civil — Système national d'identification (IUN)</p>
+      </div>
+      <div class="emblem"><svg viewBox="55 75 495 520" width="185" height="196" aria-hidden="true"><path d="M 200 560 C 210 500, 220 450, 240 400 C 254 362, 262 330, 264 302 L 336 302 C 338 330, 346 362, 360 400 C 380 450, 390 500, 400 560 C 370 545, 230 545, 200 560 Z" fill="#DFE3CA"/>
+<path d="M 200 560 C 185 566, 160 572, 138 584 C 175 570, 205 566, 226 562 Z" fill="#DFE3CA"/>
+<path d="M 400 560 C 415 566, 440 572, 462 584 C 425 570, 395 566, 374 562 Z" fill="#DFE3CA"/>
+<path d="M 262 556 C 258 566, 250 576, 240 586 C 254 576, 262 568, 268 558 Z" fill="#DFE3CA"/>
+<path d="M 338 556 C 342 566, 350 576, 360 586 C 346 576, 338 568, 332 558 Z" fill="#DFE3CA"/><path d="M 266 310 L 183 292" stroke="#DFE3CA" stroke-width="19" fill="none" stroke-linecap="round"/><path d="M 183 292 L 138 260" stroke="#DFE3CA" stroke-width="9.9" fill="none" stroke-linecap="round"/><path d="M 138 260 L 102 249" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 102 249 L 87 232" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 87 232 L 86 220" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 87 232 L 82 220" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 102 249 L 86 229" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 86 229 L 70 222" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 86 229 L 82 212" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 138 260 L 115 235" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 115 235 L 108 217" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 108 217 L 97 209" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 108 217 L 110 204" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 115 235 L 109 214" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 109 214 L 103 203" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 109 214 L 112 202" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 183 292 L 124 296" stroke="#DFE3CA" stroke-width="9.9" fill="none" stroke-linecap="round"/><path d="M 124 296 L 99 275" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 99 275 L 77 270" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 77 270 L 64 271" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 77 270 L 65 261" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 99 275 L 80 263" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 80 263 L 72 251" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 80 263 L 71 254" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 124 296 L 94 273" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 94 273 L 74 260" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 74 260 L 71 246" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 74 260 L 69 247" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 94 273 L 78 253" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 78 253 L 81 238" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 78 253 L 66 245" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 276 303 L 219 255" stroke="#DFE3CA" stroke-width="19" fill="none" stroke-linecap="round"/><path d="M 219 255 L 197 211" stroke="#DFE3CA" stroke-width="9.9" fill="none" stroke-linecap="round"/><path d="M 197 211 L 172 197" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 172 197 L 155 191" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 155 191 L 148 183" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 155 191 L 150 180" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 172 197 L 156 187" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 156 187 L 149 179" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 156 187 L 145 187" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 197 211 L 190 182" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 190 182 L 174 168" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 174 168 L 173 155" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 174 168 L 164 161" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 190 182 L 187 164" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 187 164 L 187 151" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 187 164 L 184 151" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 219 255 L 176 254" stroke="#DFE3CA" stroke-width="9.9" fill="none" stroke-linecap="round"/><path d="M 176 254 L 154 238" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 154 238 L 138 236" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 138 236 L 127 231" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 138 236 L 128 237" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 154 238 L 142 226" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 142 226 L 131 224" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 142 226 L 131 227" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 176 254 L 159 235" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 159 235 L 151 220" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 151 220 L 151 208" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 151 220 L 147 211" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 159 235 L 151 222" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 151 222 L 151 212" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 151 222 L 145 215" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 300 298 L 300 232" stroke="#DFE3CA" stroke-width="19" fill="none" stroke-linecap="round"/><path d="M 300 232 L 320 193" stroke="#DFE3CA" stroke-width="9.9" fill="none" stroke-linecap="round"/><path d="M 320 193 L 327 167" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 327 167 L 319 155" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 319 155 L 311 151" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 319 155 L 310 152" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 327 167 L 341 159" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 341 159 L 347 151" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 341 159 L 345 149" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 320 193 L 318 165" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 318 165 L 310 148" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 310 148 L 304 139" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 310 148 L 302 139" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 318 165 L 308 150" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 308 150 L 301 142" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 308 150 L 298 143" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 300 232 L 306 188" stroke="#DFE3CA" stroke-width="9.9" fill="none" stroke-linecap="round"/><path d="M 306 188 L 296 159" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 296 159 L 292 141" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 292 141 L 287 129" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 292 141 L 293 127" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 296 159 L 280 152" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 280 152 L 276 143" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 280 152 L 277 141" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 306 188 L 303 159" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 303 159 L 294 142" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 294 142 L 284 136" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 294 142 L 285 135" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 303 159 L 307 141" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 307 141 L 309 129" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 307 141 L 317 133" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 324 303 L 381 255" stroke="#DFE3CA" stroke-width="19" fill="none" stroke-linecap="round"/><path d="M 381 255 L 421 240" stroke="#DFE3CA" stroke-width="9.9" fill="none" stroke-linecap="round"/><path d="M 421 240 L 444 233" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 444 233 L 457 224" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 457 224 L 466 220" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 457 224 L 459 216" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 444 233 L 458 231" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 458 231 L 466 232" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 458 231 L 467 232" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 421 240 L 445 223" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 445 223 L 454 207" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 454 207 L 454 195" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 454 207 L 466 203" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 445 223 L 464 215" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 464 215 L 474 208" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 464 215 L 473 206" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 381 255 L 426 243" stroke="#DFE3CA" stroke-width="9.9" fill="none" stroke-linecap="round"/><path d="M 426 243 L 457 235" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 457 235 L 476 236" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 476 236 L 487 232" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 476 236 L 486 236" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 457 235 L 474 233" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 474 233 L 484 228" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 474 233 L 486 234" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 426 243 L 442 219" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 442 219 L 450 205" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 450 205 L 451 195" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 450 205 L 450 195" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 442 219 L 453 202" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 453 202 L 465 197" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 453 202 L 456 188" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 334 310 L 417 292" stroke="#DFE3CA" stroke-width="19" fill="none" stroke-linecap="round"/><path d="M 417 292 L 465 285" stroke="#DFE3CA" stroke-width="9.9" fill="none" stroke-linecap="round"/><path d="M 465 285 L 488 271" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 488 271 L 501 263" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 501 263 L 508 257" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 501 263 L 508 254" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 488 271 L 504 272" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 504 272 L 514 273" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 504 272 L 513 273" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 465 285 L 488 270" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 488 270 L 502 262" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 502 262 L 509 255" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 502 262 L 512 261" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 488 270 L 500 259" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 500 259 L 510 256" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 500 259 L 508 253" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 417 292 L 469 265" stroke="#DFE3CA" stroke-width="9.9" fill="none" stroke-linecap="round"/><path d="M 469 265 L 505 267" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 505 267 L 525 255" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 525 255 L 533 243" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 525 255 L 539 250" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 505 267 L 522 254" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 522 254 L 530 245" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 522 254 L 532 247" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 469 265 L 509 259" stroke="#DFE3CA" stroke-width="5.1" fill="none" stroke-linecap="round"/><path d="M 509 259 L 535 256" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 535 256 L 550 256" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 535 256 L 548 250" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 509 259 L 530 242" stroke="#DFE3CA" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M 530 242 L 537 228" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M 530 242 L 547 241" stroke="#DFE3CA" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></div>
+    </div>
+  </div>
+  <div class="filet-or"><hr></div>
+  <main>
+    <div class="barre-outils">
+      <div class="stats">
+        <div class="stat"><div class="num">I</div><div class="val">{{totalRecords}}</div><div class="lbl">Actes enregistrés</div></div>
+        <div class="stat"><div class="num">II</div><div class="val">{{regionsUsed}}</div><div class="lbl">Régions couvertes</div></div>
+        <div class="stat"><div class="num">III</div><div class="val">{{today}}</div><div class="lbl">Généré le</div></div>
+      </div>
+      <div class="recherche">
+        <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="7"/><path d="m16 16 5 5"/></svg>
+        <input id="q" type="search" placeholder="Rechercher par nom, BRN ou IUN…" aria-label="Rechercher">
+      </div>
+    </div>
+    <div class="cadre">
+      <div class="cadre-titre">
+        <h2>Extraits délivrables</h2>
+        <div class="maj">Dernière mise à jour : {{now}}</div>
+      </div>
+      __TABLE__
+    </div>
   </main>
-  <footer>IUN Senegal - v2.4 - {{now}}</footer>
+  <footer>
+    <div class="foot-inner">
+      <div>République du Sénégal — Ministère de l'Intérieur et de la Sécurité Publique</div>
+      <div>IUN Sénégal · __VERSION__ · {{now}}</div>
+    </div>
+  </footer>
+  <script>
+    var q = document.getElementById('q');
+    if (q) q.addEventListener('input', function () {
+      var v = this.value.trim().toLowerCase();
+      document.querySelectorAll('tbody tr').forEach(function (tr) {
+        tr.style.display = tr.textContent.toLowerCase().indexOf(v) === -1 ? 'none' : '';
+      });
+    });
+  </script>
 </body>
-</html>
-"""
+</html>"""
 
 
 @app.get("/records")
@@ -815,7 +896,7 @@ def records_list():
         pid = p.get("id", "")
         cert_url = f"/certificate/birth/{pid}"
         birth_date = str(p.get("birthDate", ""))
-        gender = str(p.get("gender", ""))
+        gender = {"male": "Masculin", "female": "Féminin"}.get(str(p.get("gender", "")), str(p.get("gender", "")))
         rows.append(
             f'<tr>'
             f'<td>{full}</td>'
@@ -852,5 +933,6 @@ def records_list():
         .replace("{{regionsUsed}}", str(len(regions)))
         .replace("{{today}}", today)
         .replace("{{now}}", now)
+        .replace("__VERSION__", "v2.7")
     )
     return HTMLResponse(content=html)
