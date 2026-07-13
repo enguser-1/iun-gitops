@@ -1,0 +1,1 @@
+{"spec":{"generateBucketName":"iun-backups","storageClassName":"openshift-storage.noobaa.io"},"metadata":{"labels":{"app.kubernetes.io/part-of":"iun-platform"},"name":"iun-backups","namespace":"iun-opencrvs-dev"},"apiVersion":"objectbucket.io/v1alpha1","kind":"ObjectBucketClaim"}
