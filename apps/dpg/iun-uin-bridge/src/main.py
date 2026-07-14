@@ -1,5 +1,5 @@
 """
-iun-uin-bridge v2.7 (2026-07-13) — Birth + Death events.
+iun-uin-bridge v3.0 (2026-07-14) — Birth + Death events, enregistrement synchrone.
 - UIN : 10 digits Verhoeff -> SN-XXXX-XXXX-XX
 - BRN Birth : RRR-YYYY-NNNNNN
 - DRN Death : RRR-YYYY-DNNNNNN (D prefix pour distinguer Death)
@@ -10,6 +10,14 @@ iun-uin-bridge v2.7 (2026-07-13) — Birth + Death events.
 - v2.5 : gestion Death events, mint UIN si absent + DRN. Endpoint /certificate/death/{id}
 - v2.6 : fix noms (given vides -> double espace), layout cert (Delivre a vs Officier)
 - v2.7 : design officiel SRMT (serif, vert forêt, or, filigrane baobab) — cert + /records
+- v3.0 : endpoint synchrone POST /event-registration (point d'extension OpenCRVS, route nginx
+  du mock countryconfig) : mint UIN + BRN/DRN AU MOMENT de l'enregistrement puis mutation
+  confirmRegistration vers le gateway (registrationNumber = BRN officiel DKR-YYYY-NNNNNN,
+  identifiers = BIRTH_CONFIGURABLE_IDENTIFIER_1 = UIN) -> l'IUN et le BRN apparaissent sur
+  l'acte natif ({{birthConfigurableIdentifier1}} / {{registrationNumber}}).
+  Idempotence retry : db.iun_event_reg (_id = compositionId).
+  Le poller devient RECONCILIATEUR : adopte l'UIN v3 (copie vers UIN_SYSTEM + national-id
+  pour /records et le cert bridge), et continue de traiter les dossiers pre-v3.
 - Idempotence : presence UIN_SYSTEM
 - Sequences : brn:{region}:{year} et drn:{region}:{year} dans db.iun_counters
 """
@@ -25,7 +33,7 @@ from datetime import datetime, timezone
 
 import httpx
 import segno
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pymongo import MongoClient, ReturnDocument
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -47,6 +55,9 @@ BRN_TYPE_CODE = "BIRTH_REGISTRATION_NUMBER"
 DRN_SYSTEM = "http://opencrvs.org/specs/id/death-registration-number"
 DRN_TYPE_CODE = "DEATH_REGISTRATION_NUMBER"
 NATIONAL_ID_SYSTEM = "http://opencrvs.org/specs/id/national-id"
+GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://gateway:7070")
+BCID1_TYPE_CODE = "BIRTH_CONFIGURABLE_IDENTIFIER_1"
+BCID1_SYSTEM = "http://opencrvs.org/specs/id/birth-configurable-identifier-1"
 REG_STATUS_REGISTERED = "REGISTERED"
 
 EVENT_BIRTH = "birth-declaration"
@@ -81,6 +92,9 @@ state = {
     "last_uin": None,
     "last_brn": None,
     "last_drn": None,
+    "event_registrations": 0,
+    "confirm_errors": 0,
+    "adoptions": 0,
     "dry_run": DRY_RUN,
 }
 
@@ -408,6 +422,28 @@ async def run_cycle():
             if has_uin(patient):
                 continue
 
+            # v3.0 : adoption — UIN deja mint par /event-registration (identifiant configurable),
+            # on le copie vers UIN_SYSTEM + national-id pour /records et le certificat bridge.
+            _, bcid = find_identifier(patient, type_code=BCID1_TYPE_CODE)
+            if bcid is None:
+                _, bcid = find_identifier(patient, system=BCID1_SYSTEM)
+            if bcid is not None and bcid.get("value"):
+                adopt_uin = bcid["value"]
+                _, brn_id = find_identifier(patient, system=BRN_SYSTEM)
+                if brn_id is None:
+                    _, brn_id = find_identifier(patient, type_code=BRN_TYPE_CODE)
+                adopt_brn = brn_id.get("value") if brn_id else None
+                if DRY_RUN:
+                    log.info("DRY_RUN adoption : Patient/%s UIN=%s", patient_id, adopt_uin)
+                    continue
+                ok = await writeback_patient(client, patient_id, adopt_uin, adopt_brn)
+                if ok:
+                    state["adoptions"] += 1
+                    log.info("adoption v3 : UIN %s -> UIN_SYSTEM/national-id pour Patient/%s", adopt_uin, patient_id)
+                else:
+                    state["errors"] += 1
+                continue
+
             office_ref = get_office_from_task(task)
             region_name = get_office_region_name(db, office_ref) if office_ref else None
             region_code = region_code_for(region_name)
@@ -489,7 +525,7 @@ async def poller():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    log.info("iun-uin-bridge v2.7 demarre (DRY_RUN=%s, poll=%ss, uin=%s)",
+    log.info("iun-uin-bridge v3.0 demarre (DRY_RUN=%s, poll=%ss, uin=%s)",
              DRY_RUN, POLL_INTERVAL_S, UIN_SERVICE_URL)
     task = asyncio.create_task(poller())
     yield
@@ -497,6 +533,148 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+
+def _boom_500(msg):
+    """Reponse d'erreur au format boom (hapi) : msg devient la raison de rejet cote core,
+    et l'enregistrement est RETENTE par opencrvs-core via countryconfig."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=500, content={
+        "statusCode": 500,
+        "error": "Internal Server Error",
+        "message": "An internal server error occurred",
+        "msg": str(msg),
+    })
+
+
+async def confirm_registration(client, composition_id, registration_number, identifiers, auth_header):
+    """Mutation confirmRegistration du gateway (contrat identique au handler countryconfig)."""
+    query = (
+        "mutation confirmRegistration($id: ID!, $details: ConfirmRegistrationInput!) "
+        "{ confirmRegistration(id: $id, details: $details) }"
+    )
+    details = {"registrationNumber": registration_number}
+    if identifiers:
+        details["identifiers"] = identifiers
+    headers = {"Content-Type": "application/json"}
+    if auth_header:
+        headers["Authorization"] = auth_header
+    try:
+        r = await client.post(
+            f"{GATEWAY_URL}/graphql",
+            json={"query": query, "variables": {"id": composition_id, "details": details}},
+            headers=headers,
+            timeout=30,
+        )
+        if r.status_code != 200:
+            return False, f"HTTP {r.status_code} : {r.text[:300]}"
+        data = r.json()
+        if data.get("errors"):
+            return False, str(data["errors"])[:300]
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+@app.post("/event-registration")
+async def event_registration(request: Request):
+    state["event_registrations"] += 1
+    # --- parse du bundle FHIR envoye par workflow ---
+    try:
+        bundle = await request.json()
+        entries = [e.get("resource", {}) for e in (bundle.get("entry") or [])]
+        task = next((r for r in entries if r.get("resourceType") == "Task"), None)
+        comp = next((r for r in entries if r.get("resourceType") == "Composition"), None)
+        if task is None or comp is None or not comp.get("id"):
+            raise ValueError("Task ou Composition absente du bundle")
+        composition_id = comp["id"]
+        event_code = ""
+        codings = (task.get("code") or {}).get("coding", [])
+        if codings:
+            event_code = codings[0].get("code", "")
+        tracking_id = None
+        for ident in task.get("identifier", []) or []:
+            if str(ident.get("system", "")).endswith("-tracking-id"):
+                tracking_id = ident.get("value")
+                break
+        if not tracking_id:
+            raise ValueError("tracking id introuvable dans la Task")
+    except Exception as exc:
+        log.error("/event-registration : bundle invalide : %s", exc)
+        return _boom_500(f"bridge IUN : bundle invalide : {exc}")
+
+    auth = request.headers.get("authorization", "")
+    db = get_db()
+    year = datetime.now(timezone.utc).year
+    fallback_regno = f"{year}{tracking_id}"
+
+    # --- idempotence retry : si deja mint pour cette composition, reutiliser ---
+    prev = db["iun_event_reg"].find_one({"_id": composition_id})
+
+    office_ref = get_office_from_task(task)
+    region_name = get_office_region_name(db, office_ref) if office_ref else None
+    region_code = region_code_for(region_name)
+
+    async with httpx.AsyncClient() as client:
+        regno = fallback_regno
+        identifiers = None
+        uin_fmt = None
+        if prev:
+            regno = prev.get("regno") or fallback_regno
+            uin_fmt = prev.get("uin")
+            if uin_fmt:
+                identifiers = [{"type": BCID1_TYPE_CODE, "value": uin_fmt}]
+            log.info("/event-registration retry : reutilise regno=%s uin=%s (%s)",
+                     regno, uin_fmt or "-", composition_id)
+        elif DRY_RUN:
+            log.info("/event-registration DRY_RUN : passthrough regno=%s (%s)", regno, event_code)
+        else:
+            if event_code == "BIRTH":
+                uin_raw = await mint_uin_raw(client)
+                if not uin_raw:
+                    state["confirm_errors"] += 1
+                    return _boom_500("bridge IUN : mint UIN impossible (iun-uin-service injoignable)")
+                try:
+                    uin_fmt = format_uin_sn(uin_raw)
+                except ValueError as e:
+                    return _boom_500(f"bridge IUN : format UIN KO : {e}")
+                identifiers = [{"type": BCID1_TYPE_CODE, "value": uin_fmt}]
+                if region_code != "XXX":
+                    seq = next_brn_sequence(db, region_code, year)
+                    regno = format_brn(region_code, year, seq)
+                    state["last_brn"] = regno
+                else:
+                    log.warning("/event-registration BIRTH : region inconnue (office=%s), regno fallback", office_ref)
+                state["uins_minted"] += 1
+                state["last_uin"] = uin_fmt
+            elif event_code == "DEATH":
+                if region_code != "XXX":
+                    seq = next_drn_sequence(db, region_code, year)
+                    regno = format_drn(region_code, year, seq)
+                    state["last_drn"] = regno
+                # l'UIN du defunt reste gere par le reconciliateur (writeback direct Hearth)
+            else:
+                log.warning("/event-registration : event %s inconnu, regno fallback", event_code or "?")
+            db["iun_event_reg"].replace_one(
+                {"_id": composition_id},
+                {"_id": composition_id, "regno": regno, "uin": uin_fmt,
+                 "event": event_code, "tracking_id": tracking_id,
+                 "ts": datetime.now(timezone.utc).isoformat()},
+                upsert=True,
+            )
+
+        ok, err = await confirm_registration(client, composition_id, regno, identifiers, auth)
+
+    if not ok:
+        state["confirm_errors"] += 1
+        log.error("/event-registration : confirmRegistration KO : %s", err)
+        return _boom_500(f"bridge IUN : confirmRegistration KO : {err}")
+
+    log.info("/event-registration OK : %s comp=%s regno=%s uin=%s",
+             event_code, composition_id, regno, uin_fmt or "-")
+    from fastapi.responses import Response
+    return Response(status_code=202)
 
 
 @app.get("/ping")
@@ -933,6 +1111,6 @@ def records_list():
         .replace("{{regionsUsed}}", str(len(regions)))
         .replace("{{today}}", today)
         .replace("{{now}}", now)
-        .replace("__VERSION__", "v2.7")
+        .replace("__VERSION__", "v3.0")
     )
     return HTMLResponse(content=html)

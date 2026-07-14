@@ -1,0 +1,151 @@
+{
+    "apiVersion":  "apps/v1",
+    "kind":  "Deployment",
+    "metadata":  {
+                     "name":  "countryconfig",
+                     "namespace":  "iun-opencrvs-dev",
+                     "labels":  {
+                                    "app.kubernetes.io/component":  "opencrvs",
+                                    "app.kubernetes.io/name":  "countryconfig"
+                                }
+                 },
+    "spec":  {
+                 "progressDeadlineSeconds":  600,
+                 "replicas":  1,
+                 "selector":  {
+                                  "matchLabels":  {
+                                                      "app.kubernetes.io/name":  "countryconfig"
+                                                  }
+                              },
+                 "strategy":  {
+                                  "rollingUpdate":  {
+                                                        "maxSurge":  "25%",
+                                                        "maxUnavailable":  "25%"
+                                                    },
+                                  "type":  "RollingUpdate"
+                              },
+                 "template":  {
+                                  "metadata":  {
+                                                   "annotations":  {
+                                                                       "kubectl.kubernetes.io/restartedAt":  "2026-07-14T22:43:38Z",
+                                                                       "openshift.io/required-scc":  "iun-anyuid-caps"
+                                                                   },
+                                                   "creationTimestamp":  null,
+                                                   "labels":  {
+                                                                  "app.kubernetes.io/component":  "opencrvs",
+                                                                  "app.kubernetes.io/name":  "countryconfig"
+                                                              }
+                                               },
+                                  "spec":  {
+                                               "containers":  [
+                                                                  {
+                                                                      "image":  "docker.io/nginxinc/nginx-unprivileged:alpine",
+                                                                      "imagePullPolicy":  "IfNotPresent",
+                                                                      "livenessProbe":  {
+                                                                                            "failureThreshold":  4,
+                                                                                            "httpGet":  {
+                                                                                                            "path":  "/ping",
+                                                                                                            "port":  3040,
+                                                                                                            "scheme":  "HTTP"
+                                                                                                        },
+                                                                                            "initialDelaySeconds":  15,
+                                                                                            "periodSeconds":  20,
+                                                                                            "successThreshold":  1,
+                                                                                            "timeoutSeconds":  3
+                                                                                        },
+                                                                      "name":  "countryconfig",
+                                                                      "ports":  [
+                                                                                    {
+                                                                                        "containerPort":  3040,
+                                                                                        "name":  "http",
+                                                                                        "protocol":  "TCP"
+                                                                                    }
+                                                                                ],
+                                                                      "readinessProbe":  {
+                                                                                             "failureThreshold":  4,
+                                                                                             "httpGet":  {
+                                                                                                             "path":  "/ping",
+                                                                                                             "port":  3040,
+                                                                                                             "scheme":  "HTTP"
+                                                                                                         },
+                                                                                             "initialDelaySeconds":  5,
+                                                                                             "periodSeconds":  10,
+                                                                                             "successThreshold":  1,
+                                                                                             "timeoutSeconds":  3
+                                                                                         },
+                                                                      "resources":  {
+                                                                                        "limits":  {
+                                                                                                       "cpu":  "250m",
+                                                                                                       "memory":  "128Mi"
+                                                                                                   },
+                                                                                        "requests":  {
+                                                                                                         "cpu":  "50m",
+                                                                                                         "memory":  "64Mi"
+                                                                                                     }
+                                                                                    },
+                                                                      "terminationMessagePath":  "/dev/termination-log",
+                                                                      "terminationMessagePolicy":  "File",
+                                                                      "volumeMounts":  [
+                                                                                           {
+                                                                                               "mountPath":  "/etc/nginx/conf.d",
+                                                                                               "name":  "nginx-conf",
+                                                                                               "readOnly":  true
+                                                                                           }
+                                                                                       ]
+                                                                  }
+                                                              ],
+                                               "dnsPolicy":  "ClusterFirst",
+                                               "imagePullSecrets":  [
+                                                                        {
+                                                                            "name":  "docker-hub-creds"
+                                                                        }
+                                                                    ],
+                                               "restartPolicy":  "Always",
+                                               "schedulerName":  "default-scheduler",
+                                               "securityContext":  {
+                                                                       "fsGroup":  101,
+                                                                       "runAsNonRoot":  true,
+                                                                       "runAsUser":  101
+                                                                   },
+                                               "serviceAccount":  "default",
+                                               "serviceAccountName":  "default",
+                                               "terminationGracePeriodSeconds":  30,
+                                               "volumes":  [
+                                                               {
+                                                                   "configMap":  {
+                                                                                     "defaultMode":  420,
+                                                                                     "items":  [
+                                                                                                   {
+                                                                                                       "key":  "locations.json",
+                                                                                                       "path":  "locations.json"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "key":  "default.conf",
+                                                                                                       "path":  "default.conf"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "key":  "config.json",
+                                                                                                       "path":  "config.json"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "key":  "birth-cert.svg",
+                                                                                                       "path":  "birth-cert.svg"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "key":  "roles.json",
+                                                                                                       "path":  "roles.json"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "key":  "handlebars.js",
+                                                                                                       "path":  "handlebars.js"
+                                                                                                   }
+                                                                                               ],
+                                                                                     "name":  "countryconfig-sn-data"
+                                                                                 },
+                                                                   "name":  "nginx-conf"
+                                                               }
+                                                           ]
+                                           }
+                              }
+             }
+}
