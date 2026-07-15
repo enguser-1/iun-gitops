@@ -27,7 +27,7 @@
                  "template":  {
                                   "metadata":  {
                                                    "annotations":  {
-                                                                       "kubectl.kubernetes.io/restartedAt":  "2026-07-14T22:43:38Z",
+                                                                       "kubectl.kubernetes.io/restartedAt":  "2026-07-15T08:12:27Z",
                                                                        "openshift.io/required-scc":  "iun-anyuid-caps"
                                                                    },
                                                    "creationTimestamp":  null,
@@ -138,6 +138,10 @@
                                                                                                    {
                                                                                                        "key":  "handlebars.js",
                                                                                                        "path":  "handlebars.js"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "key":  "death-cert.svg",
+                                                                                                       "path":  "death-cert.svg"
                                                                                                    }
                                                                                                ],
                                                                                      "name":  "countryconfig-sn-data"

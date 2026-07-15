@@ -1,5 +1,5 @@
 """
-iun-uin-bridge v3.0 (2026-07-14) — Birth + Death events, enregistrement synchrone.
+iun-uin-bridge v3.1 (2026-07-15) — Birth + Death, enregistrement synchrone, VID MOSIP affiche.
 - UIN : 10 digits Verhoeff -> SN-XXXX-XXXX-XX
 - BRN Birth : RRR-YYYY-NNNNNN
 - DRN Death : RRR-YYYY-DNNNNNN (D prefix pour distinguer Death)
@@ -18,6 +18,11 @@ iun-uin-bridge v3.0 (2026-07-14) — Birth + Death events, enregistrement synchr
   Idempotence retry : db.iun_event_reg (_id = compositionId).
   Le poller devient RECONCILIATEUR : adopte l'UIN v3 (copie vers UIN_SYSTEM + national-id
   pour /records et le cert bridge), et continue de traiter les dossiers pre-v3.
+- v3.1 : norme MOSIP d'affichage — l'UIN (10 chiffres bruts) reste INTERNE (identifiant
+  UIN_SYSTEM + BIRTH_CONFIGURABLE_IDENTIFIER_2), et c'est un VID (16 chiffres Verhoeff,
+  service kernel si VID_SERVICE_URL sinon generation locale conforme) qui est AFFICHE
+  partout : BIRTH_CONFIGURABLE_IDENTIFIER_1 = VID groupe XXXX-XXXX-XXXX-XXXX (acte natif),
+  national-id = VID groupe (templates bridge + deces), /records. Mapping db.iun_vid_map.
 - Idempotence : presence UIN_SYSTEM
 - Sequences : brn:{region}:{year} et drn:{region}:{year} dans db.iun_counters
 """
@@ -58,6 +63,10 @@ NATIONAL_ID_SYSTEM = "http://opencrvs.org/specs/id/national-id"
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://gateway:7070")
 BCID1_TYPE_CODE = "BIRTH_CONFIGURABLE_IDENTIFIER_1"
 BCID1_SYSTEM = "http://opencrvs.org/specs/id/birth-configurable-identifier-1"
+BCID2_TYPE_CODE = "BIRTH_CONFIGURABLE_IDENTIFIER_2"
+VID_SYSTEM = "http://iun.sn/specs/id/vid"
+VID_TYPE_CODE = "VID"
+VID_SERVICE_URL = os.environ.get("VID_SERVICE_URL", "")
 REG_STATUS_REGISTERED = "REGISTERED"
 
 EVENT_BIRTH = "birth-declaration"
@@ -93,6 +102,8 @@ state = {
     "last_brn": None,
     "last_drn": None,
     "event_registrations": 0,
+    "vids_minted": 0,
+    "last_vid": None,
     "confirm_errors": 0,
     "adoptions": 0,
     "dry_run": DRY_RUN,
@@ -109,6 +120,82 @@ def format_uin_sn(uin_10: str) -> str:
     if len(u) != 10:
         raise ValueError(f"UIN attendu 10 digits, recu {len(u)}: {uin_10}")
     return f"SN-{u[0:4]}-{u[4:8]}-{u[8:10]}"
+
+
+_VERHOEFF_D = [
+    [0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],[2,3,4,0,1,7,8,9,5,6],
+    [3,4,0,1,2,8,9,5,6,7],[4,0,1,2,3,9,5,6,7,8],[5,9,8,7,6,0,4,3,2,1],
+    [6,5,9,8,7,1,0,4,3,2],[7,6,5,9,8,2,1,0,4,3],[8,7,6,5,9,3,2,1,0,4],
+    [9,8,7,6,5,4,3,2,1,0],
+]
+_VERHOEFF_P = [
+    [0,1,2,3,4,5,6,7,8,9],[1,5,7,6,2,8,3,0,9,4],[5,8,0,3,7,9,6,1,4,2],
+    [8,9,1,6,0,4,3,5,2,7],[9,4,5,3,1,2,6,8,7,0],[4,2,8,6,5,7,3,9,0,1],
+    [2,7,9,3,8,0,6,4,1,5],[7,0,4,6,9,1,3,2,5,8],
+]
+_VERHOEFF_INV = [0,4,3,2,1,5,6,7,8,9]
+
+
+def verhoeff_check_digit(num_str):
+    c = 0
+    for i, ch in enumerate(reversed(str(num_str))):
+        c = _VERHOEFF_D[c][_VERHOEFF_P[(i + 1) % 8][int(ch)]]
+    return str(_VERHOEFF_INV[c])
+
+
+def verhoeff_validate(num_str):
+    c = 0
+    for i, ch in enumerate(reversed(str(num_str))):
+        c = _VERHOEFF_D[c][_VERHOEFF_P[i % 8][int(ch)]]
+    return c == 0
+
+
+def gen_vid_local():
+    """VID 16 chiffres conforme MOSIP : 1er chiffre 2-9, pas de sequences ni de
+    triples repetitions, dernier chiffre = checksum Verhoeff."""
+    import random
+    rng = random.SystemRandom()
+    for _ in range(64):
+        body = str(rng.randint(2, 9)) + "".join(str(rng.randint(0, 9)) for _ in range(14))
+        if re.search(r"(\d)\1\1", body):
+            continue
+        if any(abs(int(body[i + 1]) - int(body[i])) == 1 and abs(int(body[i + 2]) - int(body[i + 1])) == 1
+               for i in range(len(body) - 2)):
+            continue
+        return body + verhoeff_check_digit(body)
+    return body + verhoeff_check_digit(body)
+
+
+def format_vid(vid_raw):
+    v = re.sub(r"\D", "", str(vid_raw))
+    return "-".join(v[i:i + 4] for i in range(0, len(v), 4)) if len(v) == 16 else str(vid_raw)
+
+
+async def mint_vid_raw(client, uin_raw=None):
+    """VID via service kernel MOSIP si VID_SERVICE_URL, sinon generation locale conforme.
+    Le mapping UIN<->VID est conserve dans db.iun_vid_map."""
+    vid = None
+    if VID_SERVICE_URL:
+        try:
+            resp = await client.post(f"{VID_SERVICE_URL}/v1/vidgenerator/vid", timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            cand = (data.get("response") or {}).get("vid") or data.get("vid")
+            if cand and len(str(cand)) == 16 and str(cand).isdigit():
+                vid = str(cand)
+        except Exception as exc:
+            log.warning("vid-service KO (%s) - generation locale", exc)
+    if not vid:
+        vid = gen_vid_local()
+    try:
+        get_db()["iun_vid_map"].update_one(
+            {"_id": vid},
+            {"$set": {"uin": uin_raw, "ts": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+    except Exception as exc:
+        log.warning("iun_vid_map KO : %s", exc)
+    return vid
 
 
 def region_code_for(name):
@@ -232,7 +319,7 @@ async def mint_uin_raw(client):
     return None
 
 
-async def writeback_patient(client, patient_id, uin_formatted, brn_formatted):
+async def writeback_patient(client, patient_id, uin_value, brn_formatted, vid_raw=None):
     try:
         r = await client.get(f"{HEARTH_URL}/fhir/Patient/{patient_id}", timeout=15)
         r.raise_for_status()
@@ -244,14 +331,29 @@ async def writeback_patient(client, patient_id, uin_formatted, brn_formatted):
             "system": UIN_SYSTEM,
             "type": {"coding": [{"system": "http://iun.sn/specs/identifier-type",
                                    "code": UIN_TYPE_CODE}]},
-            "value": uin_formatted,
+            "value": uin_value,
         }
         if idx is not None:
             identifiers[idx] = uin_ident
         else:
             identifiers.append(uin_ident)
 
-        # v2.2 : ecrire aussi NATIONAL_ID (meme valeur formatee) pour {{nationalId}} du certif Handlebars
+        # v3.1 : VID (norme MOSIP) — stocke brut, affiche groupe via national-id
+        if vid_raw:
+            idx, _ = find_identifier(patient, system=VID_SYSTEM)
+            vid_ident = {
+                "system": VID_SYSTEM,
+                "type": {"coding": [{"system": "http://iun.sn/specs/identifier-type",
+                                       "code": VID_TYPE_CODE}]},
+                "value": vid_raw,
+            }
+            if idx is not None:
+                identifiers[idx] = vid_ident
+            else:
+                identifiers.append(vid_ident)
+
+        # national-id = valeur AFFICHEE sur les templates ({{nationalId}}/{{deceasedNationalId}})
+        display_value = format_vid(vid_raw) if vid_raw else uin_value
         idx, _ = find_identifier(patient, system=NATIONAL_ID_SYSTEM)
         if idx is None:
             idx, _ = find_identifier(patient, type_code="NATIONAL_ID")
@@ -259,7 +361,7 @@ async def writeback_patient(client, patient_id, uin_formatted, brn_formatted):
             "system": NATIONAL_ID_SYSTEM,
             "type": {"coding": [{"system": "http://opencrvs.org/specs/identifier-type",
                                    "code": "NATIONAL_ID"}]},
-            "value": uin_formatted,
+            "value": display_value,
         }
         if idx is not None:
             identifiers[idx] = nid_ident
@@ -328,34 +430,49 @@ def format_drn(region_code, year, seq):
     return f"{region_code}-{year:04d}-D{seq:06d}"
 
 
-async def writeback_death(client, patient_id, uin_formatted, drn_formatted):
-    """Writeback pour un Death : UIN sur deceased + DRN system death-registration-number."""
+async def writeback_death(client, patient_id, uin_value, drn_formatted, vid_raw=None):
+    """Writeback pour un Death : UIN interne + VID affiche + DRN."""
     try:
         r = await client.get(f"{HEARTH_URL}/fhir/Patient/{patient_id}", timeout=15)
         r.raise_for_status()
         patient = r.json()
         identifiers = patient.setdefault("identifier", [])
 
-        # UIN
+        # UIN (brut, interne)
         idx, _ = find_identifier(patient, system=UIN_SYSTEM)
         uin_ident = {
             "system": UIN_SYSTEM,
             "type": {"coding": [{"system": "http://iun.sn/specs/identifier-type",
                                    "code": UIN_TYPE_CODE}]},
-            "value": uin_formatted,
+            "value": uin_value,
         }
         if idx is not None:
             identifiers[idx] = uin_ident
         else:
             identifiers.append(uin_ident)
 
-        # national-id (same value, pour Handlebars compat)
+        # v3.1 : VID (norme MOSIP)
+        if vid_raw:
+            idx, _ = find_identifier(patient, system=VID_SYSTEM)
+            vid_ident = {
+                "system": VID_SYSTEM,
+                "type": {"coding": [{"system": "http://iun.sn/specs/identifier-type",
+                                       "code": VID_TYPE_CODE}]},
+                "value": vid_raw,
+            }
+            if idx is not None:
+                identifiers[idx] = vid_ident
+            else:
+                identifiers.append(vid_ident)
+
+        # national-id = valeur AFFICHEE ({{deceasedNationalId}})
+        display_value = format_vid(vid_raw) if vid_raw else uin_value
         idx, _ = find_identifier(patient, system=NATIONAL_ID_SYSTEM)
         nid_ident = {
             "system": NATIONAL_ID_SYSTEM,
             "type": {"coding": [{"system": "http://opencrvs.org/specs/identifier-type",
                                    "code": "NATIONAL_ID"}]},
-            "value": uin_formatted,
+            "value": display_value,
         }
         if idx is not None:
             identifiers[idx] = nid_ident
@@ -428,18 +545,24 @@ async def run_cycle():
             if bcid is None:
                 _, bcid = find_identifier(patient, system=BCID1_SYSTEM)
             if bcid is not None and bcid.get("value"):
-                adopt_uin = bcid["value"]
+                # BCID1 = valeur affichee (VID groupe en v3.1, UIN formate en v3.0) ;
+                # BCID2 = UIN brut (v3.1)
+                _, bcid2 = find_identifier(patient, type_code=BCID2_TYPE_CODE)
+                adopt_uin = (bcid2.get("value") if bcid2 else None) or bcid["value"]
+                digits = re.sub(r"\D", "", str(bcid["value"]))
+                adopt_vid = digits if len(digits) == 16 else None
                 _, brn_id = find_identifier(patient, system=BRN_SYSTEM)
                 if brn_id is None:
                     _, brn_id = find_identifier(patient, type_code=BRN_TYPE_CODE)
                 adopt_brn = brn_id.get("value") if brn_id else None
                 if DRY_RUN:
-                    log.info("DRY_RUN adoption : Patient/%s UIN=%s", patient_id, adopt_uin)
+                    log.info("DRY_RUN adoption : Patient/%s UIN=%s VID=%s", patient_id, adopt_uin, adopt_vid or "-")
                     continue
-                ok = await writeback_patient(client, patient_id, adopt_uin, adopt_brn)
+                ok = await writeback_patient(client, patient_id, adopt_uin, adopt_brn, vid_raw=adopt_vid)
                 if ok:
                     state["adoptions"] += 1
-                    log.info("adoption v3 : UIN %s -> UIN_SYSTEM/national-id pour Patient/%s", adopt_uin, patient_id)
+                    log.info("adoption v3 : UIN %s / VID %s -> identifiants pour Patient/%s",
+                             adopt_uin, adopt_vid or "-", patient_id)
                 else:
                     state["errors"] += 1
                 continue
@@ -465,12 +588,10 @@ async def run_cycle():
             if not uin_raw:
                 state["errors"] += 1
                 continue
-            try:
-                uin_fmt = format_uin_sn(uin_raw)
-            except ValueError as e:
-                log.error("format UIN KO : %s", e)
-                state["errors"] += 1
-                continue
+            vid_raw = await mint_vid_raw(client, uin_raw)
+            state["vids_minted"] += 1
+            state["last_vid"] = format_vid(vid_raw)
+            uin_fmt = uin_raw  # v3.1 : UIN stocke BRUT (norme MOSIP), affichage = VID
 
             if event_type == EVENT_BIRTH:
                 brn_fmt = None
@@ -483,9 +604,9 @@ async def run_cycle():
                     log.warning("Patient/%s BIRTH : region inconnue, BRN skip", patient_id)
                 state["uins_minted"] += 1
                 state["last_uin"] = uin_fmt
-                log.info("BIRTH UIN %s + BRN %s pour Patient/%s (%s)",
-                         uin_fmt, brn_fmt or "-", patient_id, name or "?")
-                ok = await writeback_patient(client, patient_id, uin_fmt, brn_fmt)
+                log.info("BIRTH UIN %s + VID %s + BRN %s pour Patient/%s (%s)",
+                         uin_fmt, format_vid(vid_raw), brn_fmt or "-", patient_id, name or "?")
+                ok = await writeback_patient(client, patient_id, uin_fmt, brn_fmt, vid_raw=vid_raw)
             elif event_type == EVENT_DEATH:
                 drn_fmt = None
                 if region_code != "XXX":
@@ -497,9 +618,9 @@ async def run_cycle():
                     log.warning("Patient/%s DEATH : region inconnue, DRN skip", patient_id)
                 state["uins_minted"] += 1
                 state["last_uin"] = uin_fmt
-                log.info("DEATH UIN %s + DRN %s pour Patient/%s (%s)",
-                         uin_fmt, drn_fmt or "-", patient_id, name or "?")
-                ok = await writeback_death(client, patient_id, uin_fmt, drn_fmt)
+                log.info("DEATH UIN %s + VID %s + DRN %s pour Patient/%s (%s)",
+                         uin_fmt, format_vid(vid_raw), drn_fmt or "-", patient_id, name or "?")
+                ok = await writeback_death(client, patient_id, uin_fmt, drn_fmt, vid_raw=vid_raw)
             else:
                 log.warning("event type inconnu : %s", event_type)
                 continue
@@ -525,7 +646,7 @@ async def poller():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    log.info("iun-uin-bridge v3.0 demarre (DRY_RUN=%s, poll=%ss, uin=%s)",
+    log.info("iun-uin-bridge v3.1 demarre (DRY_RUN=%s, poll=%ss, uin=%s)",
              DRY_RUN, POLL_INTERVAL_S, UIN_SERVICE_URL)
     task = asyncio.create_task(poller())
     yield
@@ -623,10 +744,17 @@ async def event_registration(request: Request):
         if prev:
             regno = prev.get("regno") or fallback_regno
             uin_fmt = prev.get("uin")
+            prev_vid = prev.get("vid")
             if uin_fmt:
-                identifiers = [{"type": BCID1_TYPE_CODE, "value": uin_fmt}]
-            log.info("/event-registration retry : reutilise regno=%s uin=%s (%s)",
-                     regno, uin_fmt or "-", composition_id)
+                if prev_vid:
+                    identifiers = [
+                        {"type": BCID1_TYPE_CODE, "value": format_vid(prev_vid)},
+                        {"type": BCID2_TYPE_CODE, "value": uin_fmt},
+                    ]
+                else:
+                    identifiers = [{"type": BCID1_TYPE_CODE, "value": uin_fmt}]
+            log.info("/event-registration retry : reutilise regno=%s uin=%s vid=%s (%s)",
+                     regno, uin_fmt or "-", prev_vid or "-", composition_id)
         elif DRY_RUN:
             log.info("/event-registration DRY_RUN : passthrough regno=%s (%s)", regno, event_code)
         else:
@@ -635,11 +763,15 @@ async def event_registration(request: Request):
                 if not uin_raw:
                     state["confirm_errors"] += 1
                     return _boom_500("bridge IUN : mint UIN impossible (iun-uin-service injoignable)")
-                try:
-                    uin_fmt = format_uin_sn(uin_raw)
-                except ValueError as e:
-                    return _boom_500(f"bridge IUN : format UIN KO : {e}")
-                identifiers = [{"type": BCID1_TYPE_CODE, "value": uin_fmt}]
+                vid_raw = await mint_vid_raw(client, uin_raw)
+                uin_fmt = uin_raw  # v3.1 : UIN stocke BRUT, jamais imprime
+                # norme MOSIP : BCID1 = VID groupe (affiche sur l'acte), BCID2 = UIN brut (interne)
+                identifiers = [
+                    {"type": BCID1_TYPE_CODE, "value": format_vid(vid_raw)},
+                    {"type": BCID2_TYPE_CODE, "value": uin_raw},
+                ]
+                state["vids_minted"] += 1
+                state["last_vid"] = format_vid(vid_raw)
                 if region_code != "XXX":
                     seq = next_brn_sequence(db, region_code, year)
                     regno = format_brn(region_code, year, seq)
@@ -659,6 +791,7 @@ async def event_registration(request: Request):
             db["iun_event_reg"].replace_one(
                 {"_id": composition_id},
                 {"_id": composition_id, "regno": regno, "uin": uin_fmt,
+                 "vid": (locals().get("vid_raw") if event_code == "BIRTH" else None),
                  "event": event_code, "tracking_id": tracking_id,
                  "ts": datetime.now(timezone.utc).isoformat()},
                 upsert=True,
@@ -685,6 +818,19 @@ def ping():
 @app.get("/status")
 def status():
     return state
+
+
+@app.get("/vid-preview")
+def vid_preview():
+    """Genere un VID local (test) : verifie la conformite Verhoeff."""
+    v = gen_vid_local()
+    return {
+        "vid_raw": v,
+        "vid_display": format_vid(v),
+        "longueur": len(v),
+        "verhoeff_ok": verhoeff_validate(v),
+        "source": "vid-service" if VID_SERVICE_URL else "generation-locale",
+    }
 
 
 @app.get("/format-preview")
@@ -821,12 +967,16 @@ async def render_birth_certificate(patient_id: str):
     child_gender = {"male": "Masculin", "female": "Féminin"}.get(str(child.get("gender", "")), str(child.get("gender", "")))
     child_birth = str(child.get("birthDate", ""))
 
-    uin = brn = ""
+    uin = brn = vid = ""
     for ident in child.get("identifier", []):
         s = ident.get("system", "")
         v = str(ident.get("value", ""))
         if s == UIN_SYSTEM: uin = v
         elif s == BRN_SYSTEM: brn = v
+        elif s == VID_SYSTEM: vid = v
+    # v3.1 norme MOSIP : on AFFICHE le VID, l'UIN reste interne
+    if vid:
+        uin = format_vid(vid)
 
     comp = _find_composition_for_patient(db, patient_id)
     mother_given = mother_family = ""
@@ -1063,12 +1213,15 @@ def records_list():
     for p in pats:
         given, family = _patient_display_name(p)
         full = f"{given} {family}".strip() or "?"
-        uin = brn = ""
+        uin = brn = vid = ""
         for ident in p.get("identifier", []):
             s = ident.get("system", "")
             v = str(ident.get("value", ""))
             if s == UIN_SYSTEM: uin = v
             elif s == BRN_SYSTEM: brn = v
+            elif s == VID_SYSTEM: vid = v
+        if vid:
+            uin = format_vid(vid)  # v3.1 : affichage = VID
         if brn and "-" in brn:
             regions.add(brn.split("-", 1)[0])
         pid = p.get("id", "")
@@ -1111,6 +1264,6 @@ def records_list():
         .replace("{{regionsUsed}}", str(len(regions)))
         .replace("{{today}}", today)
         .replace("{{now}}", now)
-        .replace("__VERSION__", "v3.0")
+        .replace("__VERSION__", "v3.1")
     )
     return HTMLResponse(content=html)
