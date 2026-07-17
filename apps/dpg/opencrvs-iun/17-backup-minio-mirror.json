@@ -1,0 +1,115 @@
+{
+    "apiVersion":  "batch/v1",
+    "kind":  "CronJob",
+    "metadata":  {
+                     "name":  "backup-minio-mirror",
+                     "namespace":  "iun-opencrvs-dev",
+                     "labels":  {
+                                    "iun.sn/backup":  "true"
+                                }
+                 },
+    "spec":  {
+                 "concurrencyPolicy":  "Forbid",
+                 "failedJobsHistoryLimit":  3,
+                 "jobTemplate":  {
+                                     "metadata":  {
+                                                      "creationTimestamp":  null
+                                                  },
+                                     "spec":  {
+                                                  "activeDeadlineSeconds":  1800,
+                                                  "backoffLimit":  1,
+                                                  "template":  {
+                                                                   "metadata":  {
+                                                                                    "creationTimestamp":  null,
+                                                                                    "labels":  {
+                                                                                                   "iun.sn/backup":  "true"
+                                                                                               }
+                                                                                },
+                                                                   "spec":  {
+                                                                                "containers":  [
+                                                                                                   {
+                                                                                                       "command":  [
+                                                                                                                       "/bin/sh",
+                                                                                                                       "-c",
+                                                                                                                       "set -e\nmc alias set src http://minio:9000 \"$MINIO_USER\" \"$MINIO_PASSWORD\"\nmc alias set dst http://s3.openshift-storage.svc \"$AWS_ACCESS_KEY_ID\" \"$AWS_SECRET_ACCESS_KEY\"\nmc mirror --overwrite src dst/$BUCKET_NAME/minio\necho MIRROR_OK"
+                                                                                                                   ],
+                                                                                                       "env":  [
+                                                                                                                   {
+                                                                                                                       "name":  "MINIO_USER",
+                                                                                                                       "valueFrom":  {
+                                                                                                                                         "secretKeyRef":  {
+                                                                                                                                                              "key":  "root-user",
+                                                                                                                                                              "name":  "minio-creds"
+                                                                                                                                                          }
+                                                                                                                                     }
+                                                                                                                   },
+                                                                                                                   {
+                                                                                                                       "name":  "MINIO_PASSWORD",
+                                                                                                                       "valueFrom":  {
+                                                                                                                                         "secretKeyRef":  {
+                                                                                                                                                              "key":  "root-password",
+                                                                                                                                                              "name":  "minio-creds"
+                                                                                                                                                          }
+                                                                                                                                     }
+                                                                                                                   },
+                                                                                                                   {
+                                                                                                                       "name":  "BUCKET_NAME",
+                                                                                                                       "valueFrom":  {
+                                                                                                                                         "configMapKeyRef":  {
+                                                                                                                                                                 "key":  "BUCKET_NAME",
+                                                                                                                                                                 "name":  "iun-backups"
+                                                                                                                                                             }
+                                                                                                                                     }
+                                                                                                                   },
+                                                                                                                   {
+                                                                                                                       "name":  "AWS_ACCESS_KEY_ID",
+                                                                                                                       "valueFrom":  {
+                                                                                                                                         "secretKeyRef":  {
+                                                                                                                                                              "key":  "AWS_ACCESS_KEY_ID",
+                                                                                                                                                              "name":  "iun-backups"
+                                                                                                                                                          }
+                                                                                                                                     }
+                                                                                                                   },
+                                                                                                                   {
+                                                                                                                       "name":  "AWS_SECRET_ACCESS_KEY",
+                                                                                                                       "valueFrom":  {
+                                                                                                                                         "secretKeyRef":  {
+                                                                                                                                                              "key":  "AWS_SECRET_ACCESS_KEY",
+                                                                                                                                                              "name":  "iun-backups"
+                                                                                                                                                          }
+                                                                                                                                     }
+                                                                                                                   }
+                                                                                                               ],
+                                                                                                       "image":  "minio/mc:RELEASE.2024-10-02T08-27-28Z",
+                                                                                                       "imagePullPolicy":  "IfNotPresent",
+                                                                                                       "name":  "mirror",
+                                                                                                       "resources":  {
+                                                                                                                         "limits":  {
+                                                                                                                                        "cpu":  "500m",
+                                                                                                                                        "memory":  "512Mi"
+                                                                                                                                    },
+                                                                                                                         "requests":  {
+                                                                                                                                          "cpu":  "50m",
+                                                                                                                                          "memory":  "128Mi"
+                                                                                                                                      }
+                                                                                                                     },
+                                                                                                       "terminationMessagePath":  "/dev/termination-log",
+                                                                                                       "terminationMessagePolicy":  "File"
+                                                                                                   }
+                                                                                               ],
+                                                                                "dnsPolicy":  "ClusterFirst",
+                                                                                "restartPolicy":  "Never",
+                                                                                "schedulerName":  "default-scheduler",
+                                                                                "securityContext":  {
+
+                                                                                                    },
+                                                                                "terminationGracePeriodSeconds":  30
+                                                                            }
+                                                               }
+                                              }
+                                 },
+                 "schedule":  "30 2 * * *",
+                 "successfulJobsHistoryLimit":  3,
+                 "suspend":  false
+             }
+}

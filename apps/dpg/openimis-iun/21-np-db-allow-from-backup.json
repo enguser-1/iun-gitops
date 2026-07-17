@@ -1,0 +1,39 @@
+{
+    "apiVersion":  "networking.k8s.io/v1",
+    "kind":  "NetworkPolicy",
+    "metadata":  {
+                     "name":  "db-allow-from-backup",
+                     "namespace":  "iun-openimis-dev",
+                     "labels":  null
+                 },
+    "spec":  {
+                 "ingress":  [
+                                 {
+                                     "from":  [
+                                                  {
+                                                      "podSelector":  {
+                                                                          "matchLabels":  {
+                                                                                              "iun.sn/backup":  "true"
+                                                                                          }
+                                                                      }
+                                                  }
+                                              ],
+                                     "ports":  [
+                                                   {
+                                                       "port":  5432,
+                                                       "protocol":  "TCP"
+                                                   }
+                                               ]
+                                 }
+                             ],
+                 "podSelector":  {
+                                     "matchLabels":  {
+                                                         "app.kubernetes.io/component":  "postgres",
+                                                         "app.kubernetes.io/name":  "openimis"
+                                                     }
+                                 },
+                 "policyTypes":  [
+                                     "Ingress"
+                                 ]
+             }
+}

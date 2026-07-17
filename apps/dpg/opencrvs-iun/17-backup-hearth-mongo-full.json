@@ -1,0 +1,166 @@
+{
+    "apiVersion":  "batch/v1",
+    "kind":  "CronJob",
+    "metadata":  {
+                     "name":  "backup-hearth-mongo-full",
+                     "namespace":  "iun-opencrvs-dev",
+                     "labels":  {
+                                    "app.kubernetes.io/part-of":  "iun-platform",
+                                    "iun.sn/backup":  "true"
+                                }
+                 },
+    "spec":  {
+                 "concurrencyPolicy":  "Forbid",
+                 "failedJobsHistoryLimit":  3,
+                 "jobTemplate":  {
+                                     "metadata":  {
+                                                      "creationTimestamp":  null
+                                                  },
+                                     "spec":  {
+                                                  "activeDeadlineSeconds":  1800,
+                                                  "backoffLimit":  1,
+                                                  "template":  {
+                                                                   "metadata":  {
+                                                                                    "creationTimestamp":  null,
+                                                                                    "labels":  {
+                                                                                                   "iun.sn/backup":  "true"
+                                                                                               }
+                                                                                },
+                                                                   "spec":  {
+                                                                                "containers":  [
+                                                                                                   {
+                                                                                                       "command":  [
+                                                                                                                       "/bin/bash",
+                                                                                                                       "-c",
+                                                                                                                       "set -euo pipefail\nEP=http://s3.openshift-storage.svc\nfor f in /backup/*; do\n  [ -e \"$f\" ] || continue\n  aws --endpoint-url $EP s3 cp \"$f\" \"s3://$BUCKET_NAME/$PREFIX/$(basename $f)\"\ndone\nKEYS=$(aws --endpoint-url $EP s3api list-objects-v2 --bucket \"$BUCKET_NAME\" --prefix \"$PREFIX/\" --query \"sort_by(Contents,\u0026LastModified)[].Key\" --output text 2\u003e/dev/null || true)\nN=$(echo \"$KEYS\" | tr \"\\t\" \"\\n\" | grep -c . || true)\nif [ \"$N\" -gt 30 ]; then\n  echo \"$KEYS\" | tr \"\\t\" \"\\n\" | head -n -30 | while read -r k; do\n    [ -n \"$k\" ] \u0026\u0026 aws --endpoint-url $EP s3 rm \"s3://$BUCKET_NAME/$k\"\n  done\nfi\necho \"UPLOAD_OK $PREFIX ($N objets avant prune)\""
+                                                                                                                   ],
+                                                                                                       "env":  [
+                                                                                                                   {
+                                                                                                                       "name":  "PREFIX",
+                                                                                                                       "value":  "hearth"
+                                                                                                                   },
+                                                                                                                   {
+                                                                                                                       "name":  "BUCKET_NAME",
+                                                                                                                       "valueFrom":  {
+                                                                                                                                         "configMapKeyRef":  {
+                                                                                                                                                                 "key":  "BUCKET_NAME",
+                                                                                                                                                                 "name":  "iun-backups"
+                                                                                                                                                             }
+                                                                                                                                     }
+                                                                                                                   },
+                                                                                                                   {
+                                                                                                                       "name":  "AWS_ACCESS_KEY_ID",
+                                                                                                                       "valueFrom":  {
+                                                                                                                                         "secretKeyRef":  {
+                                                                                                                                                              "key":  "AWS_ACCESS_KEY_ID",
+                                                                                                                                                              "name":  "iun-backups"
+                                                                                                                                                          }
+                                                                                                                                     }
+                                                                                                                   },
+                                                                                                                   {
+                                                                                                                       "name":  "AWS_SECRET_ACCESS_KEY",
+                                                                                                                       "valueFrom":  {
+                                                                                                                                         "secretKeyRef":  {
+                                                                                                                                                              "key":  "AWS_SECRET_ACCESS_KEY",
+                                                                                                                                                              "name":  "iun-backups"
+                                                                                                                                                          }
+                                                                                                                                     }
+                                                                                                                   }
+                                                                                                               ],
+                                                                                                       "image":  "amazon/aws-cli:2.17.16",
+                                                                                                       "imagePullPolicy":  "IfNotPresent",
+                                                                                                       "name":  "upload",
+                                                                                                       "resources":  {
+                                                                                                                         "limits":  {
+                                                                                                                                        "cpu":  "250m",
+                                                                                                                                        "memory":  "256Mi"
+                                                                                                                                    },
+                                                                                                                         "requests":  {
+                                                                                                                                          "cpu":  "50m",
+                                                                                                                                          "memory":  "128Mi"
+                                                                                                                                      }
+                                                                                                                     },
+                                                                                                       "terminationMessagePath":  "/dev/termination-log",
+                                                                                                       "terminationMessagePolicy":  "File",
+                                                                                                       "volumeMounts":  [
+                                                                                                                            {
+                                                                                                                                "mountPath":  "/backup",
+                                                                                                                                "name":  "backup"
+                                                                                                                            }
+                                                                                                                        ]
+                                                                                                   }
+                                                                                               ],
+                                                                                "dnsPolicy":  "ClusterFirst",
+                                                                                "initContainers":  [
+                                                                                                       {
+                                                                                                           "command":  [
+                                                                                                                           "bash",
+                                                                                                                           "-c",
+                                                                                                                           "set -euo pipefail\nSTAMP=$(date -u +%Y%m%d-%H%M%S)\nmongodump --uri=\"mongodb://$MONGO_ROOT_USER:$MONGO_ROOT_PASSWORD@mongo:27017/?authSource=admin\" --archive=/backup/hearth-full-$STAMP.archive.gz --gzip\nls -lh /backup/"
+                                                                                                                       ],
+                                                                                                           "env":  [
+                                                                                                                       {
+                                                                                                                           "name":  "MONGO_ROOT_USER",
+                                                                                                                           "valueFrom":  {
+                                                                                                                                             "secretKeyRef":  {
+                                                                                                                                                                  "key":  "root-username",
+                                                                                                                                                                  "name":  "mongodb-creds"
+                                                                                                                                                              }
+                                                                                                                                         }
+                                                                                                                       },
+                                                                                                                       {
+                                                                                                                           "name":  "MONGO_ROOT_PASSWORD",
+                                                                                                                           "valueFrom":  {
+                                                                                                                                             "secretKeyRef":  {
+                                                                                                                                                                  "key":  "root-password",
+                                                                                                                                                                  "name":  "mongodb-creds"
+                                                                                                                                                              }
+                                                                                                                                         }
+                                                                                                                       }
+                                                                                                                   ],
+                                                                                                           "image":  "mongo:6.0",
+                                                                                                           "imagePullPolicy":  "IfNotPresent",
+                                                                                                           "name":  "dump",
+                                                                                                           "resources":  {
+                                                                                                                             "limits":  {
+                                                                                                                                            "cpu":  "500m",
+                                                                                                                                            "memory":  "1Gi"
+                                                                                                                                        },
+                                                                                                                             "requests":  {
+                                                                                                                                              "cpu":  "100m",
+                                                                                                                                              "memory":  "256Mi"
+                                                                                                                                          }
+                                                                                                                         },
+                                                                                                           "terminationMessagePath":  "/dev/termination-log",
+                                                                                                           "terminationMessagePolicy":  "File",
+                                                                                                           "volumeMounts":  [
+                                                                                                                                {
+                                                                                                                                    "mountPath":  "/backup",
+                                                                                                                                    "name":  "backup"
+                                                                                                                                }
+                                                                                                                            ]
+                                                                                                       }
+                                                                                                   ],
+                                                                                "restartPolicy":  "Never",
+                                                                                "schedulerName":  "default-scheduler",
+                                                                                "securityContext":  {
+
+                                                                                                    },
+                                                                                "terminationGracePeriodSeconds":  30,
+                                                                                "volumes":  [
+                                                                                                {
+                                                                                                    "emptyDir":  {
+                                                                                                                     "sizeLimit":  "5Gi"
+                                                                                                                 },
+                                                                                                    "name":  "backup"
+                                                                                                }
+                                                                                            ]
+                                                                            }
+                                                               }
+                                              }
+                                 },
+                 "schedule":  "0 1 * * *",
+                 "successfulJobsHistoryLimit":  3,
+                 "suspend":  false
+             }
+}
