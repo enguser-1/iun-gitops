@@ -1,0 +1,116 @@
+{
+    "apiVersion":  "apps/v1",
+    "kind":  "StatefulSet",
+    "metadata":  {
+                     "name":  "postgres-events",
+                     "namespace":  "iun-opencrvs-dev",
+                     "labels":  null
+                 },
+    "spec":  {
+                 "persistentVolumeClaimRetentionPolicy":  {
+                                                              "whenDeleted":  "Retain",
+                                                              "whenScaled":  "Retain"
+                                                          },
+                 "podManagementPolicy":  "OrderedReady",
+                 "replicas":  1,
+                 "selector":  {
+                                  "matchLabels":  {
+                                                      "app.kubernetes.io/name":  "postgres-events"
+                                                  }
+                              },
+                 "serviceName":  "postgres-events",
+                 "template":  {
+                                  "metadata":  {
+                                                   "annotations":  {
+                                                                       "openshift.io/required-scc":  "iun-anyuid-caps"
+                                                                   },
+                                                   "creationTimestamp":  null,
+                                                   "labels":  {
+                                                                  "app.kubernetes.io/name":  "postgres-events"
+                                                              }
+                                               },
+                                  "spec":  {
+                                               "containers":  [
+                                                                  {
+                                                                      "env":  [
+                                                                                  {
+                                                                                      "name":  "POSTGRES_USER",
+                                                                                      "value":  "app"
+                                                                                  },
+                                                                                  {
+                                                                                      "name":  "POSTGRES_PASSWORD",
+                                                                                      "valueFrom":  {
+                                                                                                        "secretKeyRef":  {
+                                                                                                                             "key":  "app-password",
+                                                                                                                             "name":  "mongodb-creds"
+                                                                                                                         }
+                                                                                                    }
+                                                                                  },
+                                                                                  {
+                                                                                      "name":  "POSTGRES_DB",
+                                                                                      "value":  "events"
+                                                                                  },
+                                                                                  {
+                                                                                      "name":  "PGDATA",
+                                                                                      "value":  "/var/lib/postgresql/data/pgdata"
+                                                                                  }
+                                                                              ],
+                                                                      "image":  "docker.io/postgres:16-alpine",
+                                                                      "imagePullPolicy":  "IfNotPresent",
+                                                                      "name":  "postgres",
+                                                                      "ports":  [
+                                                                                    {
+                                                                                        "containerPort":  5432,
+                                                                                        "protocol":  "TCP"
+                                                                                    }
+                                                                                ],
+                                                                      "resources":  {
+                                                                                        "limits":  {
+                                                                                                       "cpu":  "1",
+                                                                                                       "memory":  "1Gi"
+                                                                                                   },
+                                                                                        "requests":  {
+                                                                                                         "cpu":  "100m",
+                                                                                                         "memory":  "256Mi"
+                                                                                                     }
+                                                                                    },
+                                                                      "terminationMessagePath":  "/dev/termination-log",
+                                                                      "terminationMessagePolicy":  "File",
+                                                                      "volumeMounts":  [
+                                                                                           {
+                                                                                               "mountPath":  "/var/lib/postgresql/data",
+                                                                                               "name":  "pg-events-data"
+                                                                                           }
+                                                                                       ]
+                                                                  }
+                                                              ],
+                                               "dnsPolicy":  "ClusterFirst",
+                                               "imagePullSecrets":  [
+                                                                        {
+                                                                            "name":  "docker-hub-creds"
+                                                                        }
+                                                                    ],
+                                               "restartPolicy":  "Always",
+                                               "schedulerName":  "default-scheduler",
+                                               "securityContext":  {
+
+                                                                   },
+                                               "terminationGracePeriodSeconds":  30,
+                                               "volumes":  [
+                                                               {
+                                                                   "name":  "pg-events-data",
+                                                                   "persistentVolumeClaim":  {
+                                                                                                 "claimName":  "postgres-events-data"
+                                                                                             }
+                                                               }
+                                                           ]
+                                           }
+                              },
+                 "updateStrategy":  {
+                                        "rollingUpdate":  {
+                                                              "partition":  0
+                                                          },
+                                        "type":  "RollingUpdate"
+                                    }
+             }
+}

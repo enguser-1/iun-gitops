@@ -27,7 +27,7 @@
                  "template":  {
                                   "metadata":  {
                                                    "annotations":  {
-                                                                       "kubectl.kubernetes.io/restartedAt":  "2026-07-15T08:12:27Z",
+                                                                       "kubectl.kubernetes.io/restartedAt":  "2026-07-17T09:34:42Z",
                                                                        "openshift.io/required-scc":  "iun-anyuid-caps"
                                                                    },
                                                    "creationTimestamp":  null,

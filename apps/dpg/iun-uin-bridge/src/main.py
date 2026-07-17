@@ -1,5 +1,5 @@
 """
-iun-uin-bridge v3.1 (2026-07-15) — Birth + Death, enregistrement synchrone, VID MOSIP affiche.
+iun-uin-bridge v3.2 (2026-07-15) — nomenclature senegalaise (regions=STATE, departements=DISTRICT).
 - UIN : 10 digits Verhoeff -> SN-XXXX-XXXX-XX
 - BRN Birth : RRR-YYYY-NNNNNN
 - DRN Death : RRR-YYYY-DNNNNNN (D prefix pour distinguer Death)
@@ -23,6 +23,9 @@ iun-uin-bridge v3.1 (2026-07-15) — Birth + Death, enregistrement synchrone, VI
   service kernel si VID_SERVICE_URL sinon generation locale conforme) qui est AFFICHE
   partout : BIRTH_CONFIGURABLE_IDENTIFIER_1 = VID groupe XXXX-XXXX-XXXX-XXXX (acte natif),
   national-id = VID groupe (templates bridge + deces), /records. Mapping db.iun_vid_map.
+- v3.2 : refonte nomenclature senegalaise — la hierarchie devient STATE=14 regions,
+  DISTRICT=46 departements. La detection de region (codes BRN/DRN) remonte desormais au
+  noeud STATE ; comparaison insensible aux accents (Thiès, Kédougou, Sédhiou...).
 - Idempotence : presence UIN_SYSTEM
 - Sequences : brn:{region}:{year} et drn:{region}:{year} dans db.iun_counters
 """
@@ -198,10 +201,15 @@ async def mint_vid_raw(client, uin_raw=None):
     return vid
 
 
+def _strip_accents(s):
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(s)) if unicodedata.category(c) != "Mn")
+
+
 def region_code_for(name):
     if not name:
         return "XXX"
-    key = str(name).strip().lower()
+    key = _strip_accents(str(name).strip().lower())
     if key in REGION_CODES:
         return REGION_CODES[key]
     for k, v in REGION_CODES.items():
@@ -220,8 +228,10 @@ def _location_role(loc):
 
 
 def get_office_region_name(db, office_ref):
-    """Walk partOf : retourne le nom du Location DISTRICT (= region administrative Senegal).
-    Fallback : dernier node visite juste avant un STATE (le pays)."""
+    """Walk partOf : retourne le nom de la REGION administrative.
+    v3.2 (nomenclature senegalaise) : region = noeud STATE (racine avant Location/0).
+    Compat pre-refonte : si un STATE nomme Senegal est rencontre (ancienne hierarchie),
+    on retourne le dernier noeud visite avant lui (l'ex-DISTRICT region)."""
     if not office_ref or "/" not in office_ref:
         return None
     loc_id = office_ref.split("/", 1)[1]
@@ -231,11 +241,13 @@ def get_office_region_name(db, office_ref):
         if not loc:
             return last_name
         role = _location_role(loc)
-        if role == "DISTRICT":
-            return loc.get("name", "")
+        name = loc.get("name", "")
         if role == "STATE":
-            return last_name
-        last_name = loc.get("name", "")
+            # ancienne hierarchie : STATE = pays "Senegal" -> la region etait le niveau precedent
+            if _strip_accents(name).strip().lower() == "senegal":
+                return last_name
+            return name
+        last_name = name
         parent = (loc.get("partOf") or {}).get("reference", "")
         if not parent or "/" not in parent:
             return last_name
@@ -646,7 +658,7 @@ async def poller():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    log.info("iun-uin-bridge v3.1 demarre (DRY_RUN=%s, poll=%ss, uin=%s)",
+    log.info("iun-uin-bridge v3.2 demarre (DRY_RUN=%s, poll=%ss, uin=%s)",
              DRY_RUN, POLL_INTERVAL_S, UIN_SERVICE_URL)
     task = asyncio.create_task(poller())
     yield
@@ -1264,6 +1276,6 @@ def records_list():
         .replace("{{regionsUsed}}", str(len(regions)))
         .replace("{{today}}", today)
         .replace("{{now}}", now)
-        .replace("__VERSION__", "v3.1")
+        .replace("__VERSION__", "v3.2")
     )
     return HTMLResponse(content=html)
