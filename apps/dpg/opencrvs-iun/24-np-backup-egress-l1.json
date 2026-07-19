@@ -1,0 +1,36 @@
+{
+    "apiVersion":  "networking.k8s.io/v1",
+    "kind":  "NetworkPolicy",
+    "metadata":  {
+                     "name":  "allow-egress-backup-to-l1",
+                     "namespace":  "iun-opencrvs-dev",
+                     "labels":  null
+                 },
+    "spec":  {
+                 "egress":  [
+                                {
+                                    "ports":  [
+                                                  {
+                                                      "port":  443,
+                                                      "protocol":  "TCP"
+                                                  }
+                                              ],
+                                    "to":  [
+                                               {
+                                                   "ipBlock":  {
+                                                                   "cidr":  "0.0.0.0/0"
+                                                               }
+                                               }
+                                           ]
+                                }
+                            ],
+                 "podSelector":  {
+                                     "matchLabels":  {
+                                                         "iun.sn/backup":  "true"
+                                                     }
+                                 },
+                 "policyTypes":  [
+                                     "Egress"
+                                 ]
+             }
+}

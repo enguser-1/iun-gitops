@@ -1,0 +1,134 @@
+{
+    "apiVersion":  "batch/v1",
+    "kind":  "CronJob",
+    "metadata":  {
+                     "name":  "backup-direct-l1-openimis-db",
+                     "namespace":  "iun-openimis-dev",
+                     "labels":  null
+                 },
+    "spec":  {
+                 "concurrencyPolicy":  "Forbid",
+                 "failedJobsHistoryLimit":  3,
+                 "jobTemplate":  {
+                                     "metadata":  {
+                                                      "creationTimestamp":  null
+                                                  },
+                                     "spec":  {
+                                                  "activeDeadlineSeconds":  1800,
+                                                  "backoffLimit":  1,
+                                                  "template":  {
+                                                                   "metadata":  {
+                                                                                    "creationTimestamp":  null,
+                                                                                    "labels":  {
+                                                                                                   "iun.sn/backup":  "true"
+                                                                                               }
+                                                                                },
+                                                                   "spec":  {
+                                                                                "containers":  [
+                                                                                                   {
+                                                                                                       "command":  [
+                                                                                                                       "sh",
+                                                                                                                       "-c",
+                                                                                                                       "set -e; ls -lh /backup/; for f in /backup/*; do [ -e \"$f\" ] || continue; AWS_ACCESS_KEY_ID=\"$L1_ACCESS_KEY\" AWS_SECRET_ACCESS_KEY=\"$L1_SECRET_KEY\" aws --endpoint-url \"$L1_S3_ENDPOINT\" --no-verify-ssl s3 cp \"$f\" \"s3://$L1_BUCKET/origins-openimis/direct/$(basename $f)\" 2\u003e/dev/null; done; echo DIRECT-L1-OK"
+                                                                                                                   ],
+                                                                                                       "envFrom":  [
+                                                                                                                       {
+                                                                                                                           "secretRef":  {
+                                                                                                                                             "name":  "iun-dr-s3"
+                                                                                                                                         }
+                                                                                                                       }
+                                                                                                                   ],
+                                                                                                       "image":  "amazon/aws-cli:2.17.16",
+                                                                                                       "imagePullPolicy":  "IfNotPresent",
+                                                                                                       "name":  "upload-l1",
+                                                                                                       "resources":  {
+
+                                                                                                                     },
+                                                                                                       "terminationMessagePath":  "/dev/termination-log",
+                                                                                                       "terminationMessagePolicy":  "File",
+                                                                                                       "volumeMounts":  [
+                                                                                                                            {
+                                                                                                                                "mountPath":  "/backup",
+                                                                                                                                "name":  "backup"
+                                                                                                                            }
+                                                                                                                        ]
+                                                                                                   }
+                                                                                               ],
+                                                                                "dnsPolicy":  "ClusterFirst",
+                                                                                "initContainers":  [
+                                                                                                       {
+                                                                                                           "command":  [
+                                                                                                                           "bash",
+                                                                                                                           "-c",
+                                                                                                                           "set -euo pipefail\nSTAMP=$(date -u +%Y%m%d-%H%M%S)\npg_dumpall -h $PGHOST -p 5432 -U \"$PGUSER\" | gzip \u003e /backup/$PGHOST-$STAMP.sql.gz\nls -lh /backup/"
+                                                                                                                       ],
+                                                                                                           "env":  [
+                                                                                                                       {
+                                                                                                                           "name":  "PGHOST",
+                                                                                                                           "value":  "openimis-db"
+                                                                                                                       },
+                                                                                                                       {
+                                                                                                                           "name":  "PGUSER",
+                                                                                                                           "valueFrom":  {
+                                                                                                                                             "secretKeyRef":  {
+                                                                                                                                                                  "key":  "DB_USER",
+                                                                                                                                                                  "name":  "openimis-db-app"
+                                                                                                                                                              }
+                                                                                                                                         }
+                                                                                                                       },
+                                                                                                                       {
+                                                                                                                           "name":  "PGPASSWORD",
+                                                                                                                           "valueFrom":  {
+                                                                                                                                             "secretKeyRef":  {
+                                                                                                                                                                  "key":  "DB_PASSWORD",
+                                                                                                                                                                  "name":  "openimis-db-app"
+                                                                                                                                                              }
+                                                                                                                                         }
+                                                                                                                       }
+                                                                                                                   ],
+                                                                                                           "image":  "ghcr.io/openimis/openimis-pgsql:25.10",
+                                                                                                           "imagePullPolicy":  "IfNotPresent",
+                                                                                                           "name":  "dump",
+                                                                                                           "resources":  {
+                                                                                                                             "limits":  {
+                                                                                                                                            "cpu":  "500m",
+                                                                                                                                            "memory":  "512Mi"
+                                                                                                                                        },
+                                                                                                                             "requests":  {
+                                                                                                                                              "cpu":  "100m",
+                                                                                                                                              "memory":  "256Mi"
+                                                                                                                                          }
+                                                                                                                         },
+                                                                                                           "terminationMessagePath":  "/dev/termination-log",
+                                                                                                           "terminationMessagePolicy":  "File",
+                                                                                                           "volumeMounts":  [
+                                                                                                                                {
+                                                                                                                                    "mountPath":  "/backup",
+                                                                                                                                    "name":  "backup"
+                                                                                                                                }
+                                                                                                                            ]
+                                                                                                       }
+                                                                                                   ],
+                                                                                "restartPolicy":  "Never",
+                                                                                "schedulerName":  "default-scheduler",
+                                                                                "securityContext":  {
+
+                                                                                                    },
+                                                                                "terminationGracePeriodSeconds":  30,
+                                                                                "volumes":  [
+                                                                                                {
+                                                                                                    "emptyDir":  {
+                                                                                                                     "sizeLimit":  "5Gi"
+                                                                                                                 },
+                                                                                                    "name":  "backup"
+                                                                                                }
+                                                                                            ]
+                                                                            }
+                                                               }
+                                              }
+                                 },
+                 "schedule":  "0 4 * * *",
+                 "successfulJobsHistoryLimit":  3,
+                 "suspend":  false
+             }
+}
