@@ -1,0 +1,123 @@
+{
+    "apiVersion":  "batch/v1",
+    "kind":  "CronJob",
+    "metadata":  {
+                     "name":  "backup-direct-l1-mosip",
+                     "namespace":  "iun-mosip-dev",
+                     "labels":  null
+                 },
+    "spec":  {
+                 "concurrencyPolicy":  "Forbid",
+                 "failedJobsHistoryLimit":  3,
+                 "jobTemplate":  {
+                                     "metadata":  {
+                                                      "creationTimestamp":  null
+                                                  },
+                                     "spec":  {
+                                                  "activeDeadlineSeconds":  1800,
+                                                  "backoffLimit":  1,
+                                                  "template":  {
+                                                                   "metadata":  {
+                                                                                    "creationTimestamp":  null,
+                                                                                    "labels":  {
+                                                                                                   "iun.sn/backup":  "true"
+                                                                                               }
+                                                                                },
+                                                                   "spec":  {
+                                                                                "containers":  [
+                                                                                                   {
+                                                                                                       "command":  [
+                                                                                                                       "sh",
+                                                                                                                       "-c",
+                                                                                                                       "set -e; for f in /backup/*; do [ -e \"$f\" ] || continue; AWS_ACCESS_KEY_ID=\"$L1_ACCESS_KEY\" AWS_SECRET_ACCESS_KEY=\"$L1_SECRET_KEY\" aws --endpoint-url \"$L1_S3_ENDPOINT\" --no-verify-ssl s3 cp \"$f\" \"s3://$L1_BUCKET/origins-mosip/direct/$(basename $f)\" 2\u003e/dev/null; done; echo DIRECT-L1-OK"
+                                                                                                                   ],
+                                                                                                       "envFrom":  [
+                                                                                                                       {
+                                                                                                                           "secretRef":  {
+                                                                                                                                             "name":  "iun-dr-s3"
+                                                                                                                                         }
+                                                                                                                       }
+                                                                                                                   ],
+                                                                                                       "image":  "amazon/aws-cli:2.17.16",
+                                                                                                       "imagePullPolicy":  "IfNotPresent",
+                                                                                                       "name":  "upload-l1",
+                                                                                                       "resources":  {
+
+                                                                                                                     },
+                                                                                                       "terminationMessagePath":  "/dev/termination-log",
+                                                                                                       "terminationMessagePolicy":  "File",
+                                                                                                       "volumeMounts":  [
+                                                                                                                            {
+                                                                                                                                "mountPath":  "/backup",
+                                                                                                                                "name":  "backup"
+                                                                                                                            }
+                                                                                                                        ]
+                                                                                                   }
+                                                                                               ],
+                                                                                "dnsPolicy":  "ClusterFirst",
+                                                                                "initContainers":  [
+                                                                                                       {
+                                                                                                           "command":  [
+                                                                                                                           "sh",
+                                                                                                                           "-c",
+                                                                                                                           "set -e\nok=0\ndumpdb() {\n  db=\"$1\"; usr=\"$2\"; pw=\"$3\"\n  echo \"dump $db (user $usr)\"\n  if PGPASSWORD=\"$pw\" pg_dump -h mosip-postgres-rw -p 5432 -U \"$usr\" -d \"$db\" | gzip \u003e \"/backup/$db-$(date -u +%Y%m%d-%H%M%S).sql.gz\"; then\n    sz=$(stat -c%s /backup/$db-*.sql.gz | tail -1); echo \"  $db -\u003e $sz octets\"; ok=$((ok+1))\n  else echo \"  $db ECHEC\"; fi\n}\ndumpdb mosip_kernel app \"$APPPW\"\ndumpdb mosip_master masteruser \"$DBPW\"\ndumpdb mosip_keymgr keymgruser \"$DBPW\"\nls -lh /backup/\n[ $ok -ge 3 ] || echo \"ATTENTION: seulement $ok/3 bases dumpees\""
+                                                                                                                       ],
+                                                                                                           "env":  [
+                                                                                                                       {
+                                                                                                                           "name":  "APPPW",
+                                                                                                                           "valueFrom":  {
+                                                                                                                                             "secretKeyRef":  {
+                                                                                                                                                                  "key":  "password",
+                                                                                                                                                                  "name":  "mosip-postgres-app"
+                                                                                                                                                              }
+                                                                                                                                         }
+                                                                                                                       },
+                                                                                                                       {
+                                                                                                                           "name":  "DBPW",
+                                                                                                                           "valueFrom":  {
+                                                                                                                                             "secretKeyRef":  {
+                                                                                                                                                                  "key":  "db-dbuser-password",
+                                                                                                                                                                  "name":  "db-common-secrets"
+                                                                                                                                                              }
+                                                                                                                                         }
+                                                                                                                       }
+                                                                                                                   ],
+                                                                                                           "image":  "docker.io/postgres:16-alpine",
+                                                                                                           "imagePullPolicy":  "IfNotPresent",
+                                                                                                           "name":  "dump",
+                                                                                                           "resources":  {
+
+                                                                                                                         },
+                                                                                                           "terminationMessagePath":  "/dev/termination-log",
+                                                                                                           "terminationMessagePolicy":  "File",
+                                                                                                           "volumeMounts":  [
+                                                                                                                                {
+                                                                                                                                    "mountPath":  "/backup",
+                                                                                                                                    "name":  "backup"
+                                                                                                                                }
+                                                                                                                            ]
+                                                                                                       }
+                                                                                                   ],
+                                                                                "restartPolicy":  "Never",
+                                                                                "schedulerName":  "default-scheduler",
+                                                                                "securityContext":  {
+
+                                                                                                    },
+                                                                                "terminationGracePeriodSeconds":  30,
+                                                                                "volumes":  [
+                                                                                                {
+                                                                                                    "emptyDir":  {
+
+                                                                                                                 },
+                                                                                                    "name":  "backup"
+                                                                                                }
+                                                                                            ]
+                                                                            }
+                                                               }
+                                              }
+                                 },
+                 "schedule":  "0 4 * * *",
+                 "successfulJobsHistoryLimit":  3,
+                 "suspend":  false
+             }
+}

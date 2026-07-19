@@ -1,39 +1,33 @@
-# Incident stockage objet NooBaa — cluster Origins — corruption silencieuse d'objets
+# Incident stockage objet NooBaa — cluster Origins — RÉSOLU le 19/07
 
-**De :** Alioune Mbaye, Lead Senior Developer, programme IUN
-**À :** Équipe opérations plateforme Heritage
-**Date :** 19 juillet 2026
-**Sévérité proposée :** Haute (intégrité de données, service partagé)
+**De :** Alioune Mbaye (astreinte temporaire), programme IUN
+**Statut : RÉSOLU** — 19/07/2026 15:16 UTC. Durée de l'incident : ~2,5 jours (17/07 02:07 → 19/07 15:16).
+**Sévérité :** Haute (indisponibilité d'objets S3, service partagé — IUN + Velero/Kopia `srmt-prod` impactés)
 
-## Symptômes constatés (namespaces iun-opencrvs-dev / iun-openimis-dev)
+## Résumé exécutif
 
-1. **Objets S3 illisibles après coup** : des objets uploadés avec succès dans des buckets OBC NooBaa (`s3.openshift-storage.svc`) deviennent illisibles quelques heures plus tard. GET → « Connection was closed before we received a valid response ». Constaté sur tous les objets écrits les 18 et 19/07 ; les objets du 17/07 restent lisibles. Exemple reproductible : `s3://iun-backups-bc6241ae-.../hearth/hearth-full-20260718-010001.archive.gz` (l'objet apparaît dans les listings avec sa taille normale, seul le GET échoue).
-2. **Écritures dégradées** : nos CronJobs de backup de la nuit du 19/07 (01:00-02:00) sont restés bloqués plus de 13 h en cours d'upload (purgés depuis).
-3. Un objet vérifié lisible le 17/07 à 21:49 (dump de 27 Mo) est devenu illisible depuis — la corruption est postérieure à l'écriture.
+Le backingstore par défaut de NooBaa (`noobaa-default-backing-store`, pv-pool) est resté en phase `Rejected` / mode `ALL_NODES_OFFLINE` pendant ~2,5 jours. Conséquences : échec de toutes les écritures S3 (`NOT_ENOUGH_SPACE` trompeur — le volume était à 29 %) et indisponibilité en lecture des objets récents. **Aucune donnée n'a été perdue** : les objets redevenus illisibles ont été re-vérifiés lisibles après remédiation.
 
-## Diagnostic côté IUN (19/07 14:36)
+## Chronologie et cause racine
 
-```
-oc get backingstore -n openshift-storage
-NAME                           TYPE      PHASE      AGE
-noobaa-default-backing-store   pv-pool   Rejected   2y101d
-```
+1. **17/07 02:07 UTC** — le pod agent pv-pool (`noobaa-default-backing-store-noobaa-pod-456e080d`) est **OOMKilled** (exit 137, 3e restart). Sa RSS plafonnait à ~400 Mo, la limite par défaut.
+2. Après redémarrage, l'agent n'a **jamais réussi à ré-établir ses heartbeats** vers `wss://noobaa-mgmt` (`RPC CONNECT TIMEOUT` en boucle, WebSocket coincé côté serveur) — alors même que le pod était `Running 1/1`.
+3. Le core NooBaa a déclaré le seul nœud de stockage offline → `ALL_NODES_OFFLINE` → backingstore `Rejected`, bucketclass `Rejected` → `allocate_node: no nodes for allocation` sur toutes les opérations. 17 454 events `BackingStorePhaseRejected` émis en 2j20h **sans alerte** — trou de supervision à combler.
+4. Impact constaté : uploads bloqués (CronJobs de backup IUN suspendus 13 h), GET « Connection was closed » sur les objets récents, échecs Velero/Kopia (`velero-backups-*/srmt-prod`).
 
-- Le backingstore par défaut (pv-pool) est en phase **Rejected**.
-- Le pod `noobaa-default-backing-store-noobaa-pod-456e080d` a redémarré 3 fois, dernier redémarrage il y a ~2,5 jours — fenêtre qui coïncide avec le début des corruptions.
-- `noobaa` (mcg-core) affiche Ready ; noobaa-core/db/endpoint Running.
+## Remédiation appliquée (19/07)
 
-Notre hypothèse : les chunks des objets récents résident sur le pv-pool rejeté/dégradé ; le endpoint NooBaa échoue à les servir. L'impact dépasse IUN : tout consommateur d'OBC NooBaa sur Origins est exposé (le registry interne s'appuie également sur cette couche via RGW).
+- **15:12** — suppression du pod agent pv-pool (recréation par l'operator) → reconnexion WebSocket propre.
+- **15:16** — backingstore `Ready` / mode `OPTIMAL`. Test canary : PUT + GET + comparaison bit-à-bit OK. **Tous les objets précédemment illisibles (18-19/07) re-vérifiés LISIBLES** — l'indisponibilité n'était pas une corruption.
+- **Prévention** — limite mémoire de l'agent pv-pool relevée (requests 600Mi / limit 1Gi, patch du backingstore) : l'OOM à 400 Mo est le déclencheur racine.
 
-## Mesures conservatoires prises côté IUN
+## Recommandations pour l'équipe plateforme
 
-- Réplication hors-site quotidienne des backups et du dépôt gitops vers le S3 du cluster L1 (opérationnelle depuis le 19/07).
-- Dumps frais (Hearth/MongoDB, postgres-events, openimis-db) poussés directement vers L1 en contournant le S3 Origins.
+1. **Supervision** : alerte sur `backingstore.status.phase != Ready` et sur le mode `*_OFFLINE` (l'incident est resté invisible 2,5 jours malgré 17 000+ events).
+2. **Dimensionnement** : valider la nouvelle limite mémoire de l'agent (1 Gi) et envisager `numVolumes: 2+` ou un second backingstore pour la redondance (un seul nœud pv-pool = SPOF intégral du S3).
+3. **Vérifier Velero/Kopia** (`srmt-prod`) : relancer/valider les sauvegardes cluster échouées depuis le 17/07.
+4. Bug possible côté NooBaa (agent incapable de se resynchroniser seul après OOM, WebSocket serveur coincé) : à signaler au support Red Hat ODF si récidive malgré la marge mémoire.
 
-## Demandes
+## Vérifications post-incident côté IUN
 
-1. Investigation et remise en état du backingstore `noobaa-default-backing-store` (pv-pool Rejected) ; vérification de l'intégrité du PV sous-jacent.
-2. Analyse des objets écrits depuis le ~17/07 sur les buckets OBC Origins (rebuild/scrub NooBaa) et avis sur leur récupérabilité.
-3. Retour d'information sur la cause (saturation du pv-pool ? PV endommagé ? éviction ?) pour notre dossier d'incident readiness.
-
-Contact : alioune.mbaye@pm.me — disponibles pour reproduire le symptôme à la demande.
+Canary écriture/lecture OK ; relecture de 100 % des objets des buckets IUN OK ; backup local de validation relancé ; les CronJobs quotidiens (locaux 01:00-02:30, miroir offsite L1 03:00, direct-to-L1 04:00) reprennent normalement. La réplication hors-site vers L1, mise en place pendant l'incident, reste en service — c'est elle qui a détecté le problème.
