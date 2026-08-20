@@ -1,4 +1,10 @@
-# iun-uin-bridge - pont OpenCRVS -> iun-uin-service (decision D-shim)
+# iun-uin-bridge - pont OpenCRVS -> registre souverain d'identite
+#
+# v4.0 (2026-08-20, ADR-R02) : le bridge ne fabrique plus d'identite, il la
+# RESOUT aupres du registre et ne frappe que ce que le registre n'a pas.
+# Sur un deces : resolution d'abord, desactivation ensuite ; si le sujet n'est
+# pas retrouve, aucune frappe et un ecart est ouvert.
+#
 # DRY_RUN=true par defaut : observer les logs avant d'activer (oc set env DRY_RUN=false)
 apiVersion: apps/v1
 kind: Deployment
@@ -41,6 +47,35 @@ spec:
               value: "30"
             - name: DRY_RUN
               value: "true"
+
+            # ── v4.0 — contrat MOSIP ────────────────────────────────────
+            # Une seule base pour tout le contrat : le jour ou le kernel MOSIP
+            # amont tourne, c'est cette valeur qu'on repointe, rien d'autre.
+            - name: IDENTITY_SERVICE_URL
+              value: "http://iun-uin-service.iun-mosip-dev.svc.cluster.local:8080"
+            # Ecriture de l'identite derriere le numero (ADR-R02).
+            - name: IDREPO_ENABLED
+              value: "true"
+            # Le registre est le SEUL emetteur de VID. `true` reactive la
+            # generation locale : elle produit un nombre au bon format que le
+            # registre ne connait pas, donc irrevocable. Mode degrade, a n'ouvrir
+            # que le temps d'un incident, et a regulariser ensuite.
+            - name: ALLOW_LOCAL_VID
+              value: "false"
+
+            # ── v4.0 — robustesse de l'appel au registre ────────────────
+            # Un enregistrement d'etat civil ne doit jamais echouer parce que le
+            # registre d'identite ne repond pas : au-dela du disjoncteur, le
+            # bridge confirme l'enregistrement sans UIN et ouvre un ecart
+            # `identite_differee` que le reconciliateur reprend au cycle suivant.
+            - name: HTTP_RETRIES
+              value: "3"
+            - name: HTTP_BACKOFF_S
+              value: "0.8"
+            - name: CB_THRESHOLD
+              value: "5"
+            - name: CB_COOLDOWN_S
+              value: "60"
           readinessProbe:
             httpGet: { path: /ping, port: 8080 }
             periodSeconds: 15

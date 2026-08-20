@@ -1,5 +1,25 @@
 """
-iun-uin-bridge v3.2 (2026-07-15) — nomenclature senegalaise (regions=STATE, departements=DISTRICT).
+iun-uin-bridge v4.0 (2026-08-20) — arbitrage A8 : MOSIP est le generateur
+central et souverain d'identite. Le bridge ne fabrique plus d'identite : il la
+RESOUT aupres du registre, et ne frappe que ce que le registre n'a pas.
+
+  1. DECES : resolution AVANT frappe. Le defunt est cherche dans le registre
+     (piece d'identite declaree, puis nom + date de naissance). Trouve -> on
+     reprend SON UIN et SON VID, puis on desactive l'identite. Non trouve ou
+     ambigu -> AUCUNE frappe : l'acte est numerote, et l'ecart est verse dans
+     db.iun_ecarts. Un deces non rattache est une information utile ; un deces
+     faussement rattache a un identifiant neuf est un mensonge propre.
+  2. VID : emis par le registre (revocable, rotatif), plus par le bridge. La
+     generation locale devient un mode degrade explicite (ALLOW_LOCAL_VID).
+  3. IDENTITE : ecrite dans l'ID Repository a la naissance. Sans cela le
+     registre distribuait un nombre sans savoir a qui.
+  4. IDEMPOTENCE : la cle d'evenement (compositionId) est transmise au
+     generateur. Deux chemins concurrents ne peuvent plus frapper deux fois.
+  5. ROBUSTESSE : reprise, disjoncteur, reservation/confirmation. Un numero
+     frappe puis perdu devient visible au lieu de disparaitre. Un enregistrement
+     d'etat civil ne doit jamais echouer parce que le registre ne repond pas.
+
+Historique v3.6 (2026-08-19) — acte de deces : lieu de deces fidele (etablissement OU domicile).
 - UIN : 10 digits Verhoeff -> SN-XXXX-XXXX-XX
 - BRN Birth : RRR-YYYY-NNNNNN
 - DRN Death : RRR-YYYY-DNNNNNN (D prefix pour distinguer Death)
@@ -26,8 +46,29 @@ iun-uin-bridge v3.2 (2026-07-15) — nomenclature senegalaise (regions=STATE, de
 - v3.2 : refonte nomenclature senegalaise — la hierarchie devient STATE=14 regions,
   DISTRICT=46 departements. La detection de region (codes BRN/DRN) remonte desormais au
   noeud STATE ; comparaison insensible aux accents (Thiès, Kédougou, Sédhiou...).
+- v3.3 : Marriage event — sections `bride-details` + `groom-details` detectees, MRN commun
+  au couple (RRR-YYYY-MNNNNNN, M prefix), sequence Mongo `mrn:{region}:{year}` independante.
+  Bride et groom recoivent chacun UIN interne + VID affiche + MRN (si UIN absent, mint ;
+  sinon adopt). Symetrique a Birth/Death mais avec 2 Patients writeback + un seul MRN.
+- v3.4 : endpoint GET /certificate/death/{patient_id} — symetrique de /certificate/birth,
+  gabarit `death-certificate.svg` (variante bridge du modele officiel SRMT, QR embarque en
+  data URI). Champs remplis : deceased*, spouse*, informant*, placeOfDeath{Facility,District,
+  Country}, registrationNumber = DRN, deceasedNationalId = VID affiche (norme v3.1).
+  /records devient event-aware : un Patient porteur d'un DRN pointe vers l'acte de deces.
+- v3.5 : UN SEUL DRN par deces. Le DRN officiel est alloue par POST /event-registration
+  (il part dans confirmRegistration et atterrit sur la Task = numero vu par OpenCRVS et
+  imprime sur l'acte natif). Le reconciliateur ne tire PLUS un second numero de sequence :
+  il ADOPTE celui de db.iun_event_reg, sinon celui de la Task s'il est deja au format
+  RRR-YYYY-DNNNNNN, et n'alloue une sequence qu'en dernier recours. Il complete ensuite
+  l'entree iun_event_reg avec l'UIN/VID qu'il vient de minter. Compteur `drn_adoptions`.
+- v3.6 : lieu de deces. OpenCRVS pose soit une Location HEALTH_FACILITY nommee, soit une
+  Location SANS NOM de type DECEASED_USUAL_RESIDENCE / PRIVATE_HOME / OTHER dont l'adresse
+  porte `district` et `state` sous forme d'UUID de Location. On rend donc : le nom de
+  l'etablissement s'il existe, sinon un libelle lisible (« Domicile du defunt »…), et on
+  resout les UUID d'adresse en noms. Plus AUCUN repli sur le bureau d'etat civil : un extrait
+  ne peut pas laisser croire que la personne est decedee au guichet.
 - Idempotence : presence UIN_SYSTEM
-- Sequences : brn:{region}:{year} et drn:{region}:{year} dans db.iun_counters
+- Sequences : brn/drn/mrn:{region}:{year} dans db.iun_counters
 """
 
 import asyncio
@@ -36,6 +77,7 @@ import io
 import logging
 import os
 import re
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -62,6 +104,8 @@ BRN_SYSTEM = "http://opencrvs.org/specs/id/birth-registration-number"
 BRN_TYPE_CODE = "BIRTH_REGISTRATION_NUMBER"
 DRN_SYSTEM = "http://opencrvs.org/specs/id/death-registration-number"
 DRN_TYPE_CODE = "DEATH_REGISTRATION_NUMBER"
+MRN_SYSTEM = "http://opencrvs.org/specs/id/marriage-registration-number"
+MRN_TYPE_CODE = "MARRIAGE_REGISTRATION_NUMBER"
 NATIONAL_ID_SYSTEM = "http://opencrvs.org/specs/id/national-id"
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://gateway:7070")
 BCID1_TYPE_CODE = "BIRTH_CONFIGURABLE_IDENTIFIER_1"
@@ -70,10 +114,23 @@ BCID2_TYPE_CODE = "BIRTH_CONFIGURABLE_IDENTIFIER_2"
 VID_SYSTEM = "http://iun.sn/specs/id/vid"
 VID_TYPE_CODE = "VID"
 VID_SERVICE_URL = os.environ.get("VID_SERVICE_URL", "")
+
+# v4.0 — contrat MOSIP. Une seule base : le jour ou le kernel upstream tourne,
+# c'est un repointage d'URL, pas une reecriture.
+IDENTITY_SERVICE_URL = os.environ.get("IDENTITY_SERVICE_URL", UIN_SERVICE_URL)
+IDREPO_ENABLED = os.environ.get("IDREPO_ENABLED", "true").lower() in ("1", "true", "yes")
+# Mode degrade explicite : le VID fabrique par le bridge n'est pas revocable.
+ALLOW_LOCAL_VID = os.environ.get("ALLOW_LOCAL_VID", "false").lower() in ("1", "true", "yes")
+HTTP_RETRIES = int(os.environ.get("HTTP_RETRIES", "3"))
+HTTP_BACKOFF_S = float(os.environ.get("HTTP_BACKOFF_S", "0.8"))
+CB_THRESHOLD = int(os.environ.get("CB_THRESHOLD", "5"))
+CB_COOLDOWN_S = int(os.environ.get("CB_COOLDOWN_S", "60"))
+BRIDGE_VERSION = "v4.0"
 REG_STATUS_REGISTERED = "REGISTERED"
 
 EVENT_BIRTH = "birth-declaration"
 EVENT_DEATH = "death-declaration"
+EVENT_MARRIAGE = "marriage-declaration"
 
 REGION_CODES = {
     "dakar": "DKR",
@@ -98,6 +155,7 @@ state = {
     "uins_minted": 0,
     "brns_reformatted": 0,
     "drns_reformatted": 0,
+    "drn_adoptions": 0,
     "writebacks_ok": 0,
     "errors": 0,
     "last_cycle_at": None,
@@ -110,7 +168,49 @@ state = {
     "confirm_errors": 0,
     "adoptions": 0,
     "dry_run": DRY_RUN,
+    # v4.0
+    "deaths_resolved": 0,
+    "deaths_unmatched": 0,
+    "deaths_ambiguous": 0,
+    "uins_deactivated": 0,
+    "idrepo_writes": 0,
+    "idrepo_errors": 0,
+    "vids_from_registry": 0,
+    "vids_local_degraded": 0,
+    "uin_reservations_released": 0,
+    "degraded_registrations": 0,
+    "identity_service_open_circuit": False,
+    "version": BRIDGE_VERSION,
 }
+
+# Disjoncteur du registre d'identite : au-dela de CB_THRESHOLD echecs consecutifs
+# on cesse d'appeler pendant CB_COOLDOWN_S, au lieu de faire echouer chaque
+# enregistrement d'etat civil derriere un service muet.
+_cb = {"failures": 0, "open_until": 0.0}
+
+
+def _cb_open():
+    if _cb["open_until"] > time.time():
+        return True
+    if _cb["open_until"]:
+        _cb["open_until"] = 0.0
+        _cb["failures"] = 0
+        state["identity_service_open_circuit"] = False
+        log.info("registre d'identite : disjoncteur referme")
+    return False
+
+
+def _cb_ok():
+    _cb["failures"] = 0
+
+
+def _cb_ko():
+    _cb["failures"] += 1
+    if _cb["failures"] >= CB_THRESHOLD:
+        _cb["open_until"] = time.time() + CB_COOLDOWN_S
+        state["identity_service_open_circuit"] = True
+        log.error("registre d'identite : disjoncteur OUVERT pour %ds (%d echecs)",
+                  CB_COOLDOWN_S, _cb["failures"])
 
 
 def get_db():
@@ -175,25 +275,40 @@ def format_vid(vid_raw):
 
 
 async def mint_vid_raw(client, uin_raw=None):
-    """VID via service kernel MOSIP si VID_SERVICE_URL, sinon generation locale conforme.
-    Le mapping UIN<->VID est conserve dans db.iun_vid_map."""
+    """
+    v4.0 : le VID est EMIS PAR LE REGISTRE, donc reellement revocable et rotatif.
+    La generation locale devient un mode degrade explicite : elle produit un
+    nombre au bon format que le registre ne connait pas, donc irrevocable.
+    Elle est desactivee par defaut et comptabilisee quand elle sert.
+    """
     vid = None
-    if VID_SERVICE_URL:
+    if uin_raw:
+        vid = await vid_for_uin(client, uin_raw)
+    if not vid and VID_SERVICE_URL:
+        # compat : ancien service VID autonome
         try:
-            resp = await client.post(f"{VID_SERVICE_URL}/v1/vidgenerator/vid", timeout=15)
+            resp = await client.post("%s/v1/vidgenerator/vid" % VID_SERVICE_URL, timeout=15)
             resp.raise_for_status()
-            data = resp.json()
-            cand = (data.get("response") or {}).get("vid") or data.get("vid")
+            cand = _unwrap(resp.json(), "vid")
             if cand and len(str(cand)) == 16 and str(cand).isdigit():
                 vid = str(cand)
+                state["vids_from_registry"] += 1
         except Exception as exc:
-            log.warning("vid-service KO (%s) - generation locale", exc)
+            log.warning("service VID autonome KO (%s)", exc)
     if not vid:
+        if not ALLOW_LOCAL_VID:
+            log.error("VID non emis pour UIN %s : le registre est le seul emetteur "
+                      "(ALLOW_LOCAL_VID=false)", uin_raw)
+            return None
         vid = gen_vid_local()
+        state["vids_local_degraded"] += 1
+        log.warning("MODE DEGRADE : VID %s genere localement — NON revocable, "
+                    "inconnu du registre, a regulariser", vid)
     try:
         get_db()["iun_vid_map"].update_one(
             {"_id": vid},
-            {"$set": {"uin": uin_raw, "ts": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"uin": uin_raw, "ts": datetime.now(timezone.utc).isoformat(),
+                      "source": "registry" if not ALLOW_LOCAL_VID or state["vids_local_degraded"] == 0 else "mixed"}},
             upsert=True,
         )
     except Exception as exc:
@@ -317,17 +432,241 @@ def has_uin(patient_doc):
     return False
 
 
-async def mint_uin_raw(client):
+# ═══════════════════════════════════════════════════════════════════════════
+# v4.0 — CLIENT DU REGISTRE SOUVERAIN D'IDENTITE (contrat MOSIP)
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _id_call(client, method, path, json_body=None, timeout=12, allow_404=False):
+    """
+    Appel au registre. Ne leve jamais : renvoie (donnees, erreur).
+    Reprise avec attente croissante, disjoncteur sur pannes consecutives.
+    Une erreur 4xx est une reponse metier, pas une panne : elle ne compte pas
+    pour le disjoncteur.
+    """
+    if _cb_open():
+        return None, "circuit_open"
+    url = "%s%s" % (IDENTITY_SERVICE_URL, path)
+    last = "inconnu"
+    for attempt in range(1, HTTP_RETRIES + 1):
+        try:
+            resp = await client.request(method, url, json=json_body, timeout=timeout)
+            if resp.status_code in (200, 201):
+                _cb_ok()
+                return resp.json(), None
+            if allow_404 and resp.status_code == 404:
+                _cb_ok()
+                return None, "not_found"
+            if 400 <= resp.status_code < 500:
+                _cb_ok()
+                return None, "http_%s:%s" % (resp.status_code, resp.text[:160])
+            last = "http_%s" % resp.status_code
+        except Exception as exc:
+            last = "%s: %s" % (type(exc).__name__, exc)
+        if attempt < HTTP_RETRIES:
+            await asyncio.sleep(HTTP_BACKOFF_S * attempt)
+    _cb_ko()
+    return None, last
+
+
+def _unwrap(data, *keys):
+    """Le registre repond en enveloppe MOSIP ; les versions anterieures a plat."""
+    if not isinstance(data, dict):
+        return None
+    inner = data.get("response") if isinstance(data.get("response"), dict) else {}
+    for k in keys:
+        v = inner.get(k)
+        if v in (None, ""):
+            v = data.get(k)
+        if v not in (None, ""):
+            return v
+    return None
+
+
+def _patient_full_name(patient):
     try:
-        resp = await client.post(f"{UIN_SERVICE_URL}/v1/idgenerator/uin", timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        uin = (data.get("response") or {}).get("uin") or data.get("uin")
-        if uin and len(str(uin)) == 10 and str(uin).isdigit():
-            return str(uin)
-        log.error("reponse uin-service inattendue : %s", data)
+        n0 = (patient.get("name") or [{}])[0]
+        parts = [p.strip() for p in (n0.get("given") or []) if p and p.strip()]
+        fam = (n0.get("family") or "").strip()
+        if fam:
+            parts.append(fam)
+        return " ".join(parts).strip()
+    except Exception:
+        return ""
+
+
+def record_ecart(db, nature, comp_id, patient_id, regno, detail, criteria=None):
+    """
+    Un ecart n'est pas une panne : c'est un etat ou l'IUN et le registre ne
+    disent pas la meme chose. On l'expose, on ne le normalise pas.
+    """
+    try:
+        db["iun_ecarts"].update_one(
+            {"_id": "%s:%s" % (nature, comp_id)},
+            {"$set": {
+                "nature": nature,
+                "composition": comp_id,
+                "patient": patient_id,
+                "regno": regno,
+                "detail": detail,
+                "criteria": criteria or {},
+                "state": "OPEN",
+                "detected_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        log.warning("ECART %s (%s) : %s", nature, regno or comp_id, detail)
     except Exception as exc:
-        log.error("mint UIN KO : %s", exc)
+        log.warning("enregistrement d'ecart KO : %s", exc)
+
+
+async def mint_uin_raw(client, idem_key=None, requester="bridge-poller", reserve=False):
+    """
+    Frappe un UIN. Renvoie (uin, reservation_id).
+
+    `idem_key` est l'identifiant de l'evenement declencheur : deux chemins
+    d'attribution concurrents qui presentent la meme cle recoivent le meme
+    numero. C'est ce qui ferme le mode de panne du double DRN, un cran plus haut.
+    """
+    body = {"requester": requester, "reserve": bool(reserve)}
+    if idem_key:
+        body["idempotencyKey"] = str(idem_key)[:160]
+    data, err = await _id_call(client, "POST", "/v1/idgenerator/uin", body)
+    if data is None:
+        log.error("frappe UIN KO : %s", err)
+        return None, None
+    uin = _unwrap(data, "uin")
+    if not (uin and len(str(uin)) == 10 and str(uin).isdigit()):
+        log.error("reponse registre inattendue : %s", str(data)[:220])
+        return None, None
+    return str(uin), _unwrap(data, "reservationId")
+
+
+async def confirm_uin(client, reservation_id, note=None):
+    if not reservation_id:
+        return
+    await _id_call(client, "POST",
+                   "/v1/idgenerator/reservation/%s/confirm" % reservation_id,
+                   None, allow_404=True)
+
+
+async def release_uin(client, reservation_id, note=None):
+    """L'ecriture a echoue de notre cote : on relache. Le numero n'est jamais
+    recycle, mais il cesse de compter comme une allocation en attente."""
+    if not reservation_id:
+        return
+    _, err = await _id_call(client, "POST",
+                            "/v1/idgenerator/reservation/%s/release" % reservation_id,
+                            None, allow_404=True)
+    if err is None:
+        state["uin_reservations_released"] += 1
+
+
+def _identity_payload(patient):
+    """Jeu demographique minimal, issu de l'etat civil. Aucune biometrie."""
+    out = {"fullName": _patient_full_name(patient)}
+    if patient.get("birthDate"):
+        out["dateOfBirth"] = str(patient["birthDate"])[:10]
+    if patient.get("gender"):
+        out["gender"] = str(patient["gender"])[:16]
+    for ident in patient.get("identifier", []) or []:
+        sysu = str(ident.get("system") or "")
+        val = ident.get("value")
+        if not val:
+            continue
+        if sysu == BRN_SYSTEM:
+            out["birthRegistrationNumber"] = str(val)
+        elif sysu == NATIONAL_ID_SYSTEM:
+            digits = re.sub(r"\D", "", str(val))
+            if digits and len(digits) not in (16,):
+                out.setdefault("nationalId", digits)
+    return out
+
+
+async def idrepo_create(client, uin, patient, registration_id=None):
+    """Ecrit l'identite derriere le numero. Sans cet appel, le registre a
+    distribue un nombre sans savoir a qui."""
+    if not IDREPO_ENABLED:
+        return False
+    payload = {"uin": str(uin), "identity": _identity_payload(patient),
+               "registrationId": registration_id, "source": "opencrvs"}
+    data, err = await _id_call(client, "POST", "/idrepository/v1/identity", payload)
+    if data is None:
+        state["idrepo_errors"] += 1
+        log.warning("ID Repository : ecriture KO pour UIN %s (%s)", uin, err)
+        return False
+    state["idrepo_writes"] += 1
+    log.info("ID Repository : identite ecrite pour UIN %s", uin)
+    return True
+
+
+async def idrepo_deactivate(client, uin, reason=None):
+    """Le deces desactive l'identite et revoque ses VID. Sans cela le registre
+    croyait le numero actif indefiniment."""
+    if not IDREPO_ENABLED:
+        return False
+    data, err = await _id_call(
+        client, "PATCH", "/idrepository/v1/identity/uin/%s" % uin,
+        {"status": "DEACTIVATED", "reason": (reason or "deces")[:64]}, allow_404=True)
+    if data is None:
+        log.warning("desactivation KO pour UIN %s (%s)", uin, err)
+        return False
+    state["uins_deactivated"] += 1
+    log.info("identite %s desactivee (%s)", uin, reason or "-")
+    return True
+
+
+def death_resolution_criteria(patient):
+    """
+    Ce qu'on presente au registre pour retrouver le defunt : d'abord la piece
+    d'identite declaree au guichet, ensuite le nom et la date de naissance.
+    """
+    crit = {}
+    _, nid = find_identifier(patient, system=NATIONAL_ID_SYSTEM)
+    digits = re.sub(r"\D", "", str((nid or {}).get("value") or "")) if nid else ""
+    if digits:
+        if len(digits) == 16:
+            crit["vid"] = digits
+        elif len(digits) == 10:
+            crit["uin"] = digits
+        else:
+            crit["nationalId"] = digits
+            crit["cniNumber"] = digits
+    name = _patient_full_name(patient)
+    if name:
+        crit["fullName"] = name
+    if patient.get("birthDate"):
+        crit["dateOfBirth"] = str(patient["birthDate"])[:10]
+    return crit
+
+
+async def resolve_identity(client, criteria):
+    """Renvoie (candidat, verdict, tous_les_candidats). Ne tranche jamais seul :
+    AMBIGUOUS et WEAK repartent en ecart."""
+    if not criteria:
+        return None, "NO_CRITERIA", []
+    data, err = await _id_call(client, "POST",
+                               "/idrepository/v1/identity/search", criteria)
+    if data is None:
+        return None, "SERVICE_UNAVAILABLE", []
+    verdict = _unwrap(data, "verdict") or "NOT_FOUND"
+    inner = data.get("response") if isinstance(data.get("response"), dict) else {}
+    cands = inner.get("candidates") or data.get("candidates") or []
+    if verdict in ("RESOLVED", "RESOLVED_DEMOGRAPHIC") and cands:
+        return cands[0], verdict, cands
+    return None, verdict, cands
+
+
+async def vid_for_uin(client, uin):
+    """VID actif du sujet : le registre rejoue le VID perpetuel existant."""
+    data, err = await _id_call(client, "POST", "/v1/vidgenerator/vid",
+                               {"uin": str(uin), "vidType": "PERPETUAL"})
+    if data is None:
+        log.warning("VID indisponible pour UIN %s (%s)", uin, err)
+        return None
+    vid = _unwrap(data, "vid")
+    if vid and len(str(vid)) == 16 and str(vid).isdigit():
+        state["vids_from_registry"] += 1
+        return str(vid)
     return None
 
 
@@ -438,6 +777,22 @@ def next_drn_sequence(db, region_code, year):
     return int(doc.get("seq", 1))
 
 
+_DRN_RE = re.compile(r"^[A-Z]{3}-\d{4}-D\d{6}$")
+
+
+def drn_from_task(task):
+    """v3.5 : DRN deja pose sur la Task par confirmRegistration, s'il est a notre format."""
+    if not task:
+        return None
+    for ident in task.get("identifier", []):
+        s = str(ident.get("system", ""))
+        if s.endswith("/death-registration-number"):
+            v = str(ident.get("value", "") or "")
+            if _DRN_RE.match(v):
+                return v
+    return None
+
+
 def format_drn(region_code, year, seq):
     return f"{region_code}-{year:04d}-D{seq:06d}"
 
@@ -450,18 +805,19 @@ async def writeback_death(client, patient_id, uin_value, drn_formatted, vid_raw=
         patient = r.json()
         identifiers = patient.setdefault("identifier", [])
 
-        # UIN (brut, interne)
-        idx, _ = find_identifier(patient, system=UIN_SYSTEM)
-        uin_ident = {
-            "system": UIN_SYSTEM,
-            "type": {"coding": [{"system": "http://iun.sn/specs/identifier-type",
-                                   "code": UIN_TYPE_CODE}]},
-            "value": uin_value,
-        }
-        if idx is not None:
-            identifiers[idx] = uin_ident
-        else:
-            identifiers.append(uin_ident)
+        # UIN (brut, interne) — v4.0 : absent si le deces n'a pas ete rattache
+        if uin_value:
+            idx, _ = find_identifier(patient, system=UIN_SYSTEM)
+            uin_ident = {
+                "system": UIN_SYSTEM,
+                "type": {"coding": [{"system": "http://iun.sn/specs/identifier-type",
+                                       "code": UIN_TYPE_CODE}]},
+                "value": uin_value,
+            }
+            if idx is not None:
+                identifiers[idx] = uin_ident
+            else:
+                identifiers.append(uin_ident)
 
         # v3.1 : VID (norme MOSIP)
         if vid_raw:
@@ -478,18 +834,22 @@ async def writeback_death(client, patient_id, uin_value, drn_formatted, vid_raw=
                 identifiers.append(vid_ident)
 
         # national-id = valeur AFFICHEE ({{deceasedNationalId}})
+        # v4.0 : si le deces n'est pas rattache, on ne TOUCHE PAS a la piece
+        # d'identite declaree au guichet — c'est la seule cle de rapprochement
+        # dont disposera l'agent qui instruira l'ecart.
         display_value = format_vid(vid_raw) if vid_raw else uin_value
-        idx, _ = find_identifier(patient, system=NATIONAL_ID_SYSTEM)
-        nid_ident = {
-            "system": NATIONAL_ID_SYSTEM,
-            "type": {"coding": [{"system": "http://opencrvs.org/specs/identifier-type",
-                                   "code": "NATIONAL_ID"}]},
-            "value": display_value,
-        }
-        if idx is not None:
-            identifiers[idx] = nid_ident
-        else:
-            identifiers.append(nid_ident)
+        if display_value:
+            idx, _ = find_identifier(patient, system=NATIONAL_ID_SYSTEM)
+            nid_ident = {
+                "system": NATIONAL_ID_SYSTEM,
+                "type": {"coding": [{"system": "http://opencrvs.org/specs/identifier-type",
+                                       "code": "NATIONAL_ID"}]},
+                "value": display_value,
+            }
+            if idx is not None:
+                identifiers[idx] = nid_ident
+            else:
+                identifiers.append(nid_ident)
 
         # DRN (replace le DRN OpenCRVS opaque)
         if drn_formatted:
@@ -596,16 +956,28 @@ async def run_cycle():
                          event_type, patient_id, name or "?", region_code, office_ref or "?")
                 continue
 
-            uin_raw = await mint_uin_raw(client)
-            if not uin_raw:
-                state["errors"] += 1
-                continue
-            vid_raw = await mint_vid_raw(client, uin_raw)
-            state["vids_minted"] += 1
-            state["last_vid"] = format_vid(vid_raw)
-            uin_fmt = uin_raw  # v3.1 : UIN stocke BRUT (norme MOSIP), affichage = VID
+            # ══════════════════════════════════════════════════════════
+            # v4.0 — la frappe n'est plus le reflexe par defaut.
+            # Naissance : le sujet entre dans la vie civile, on frappe.
+            # Deces     : le sujet existe deja quelque part, on RESOUT.
+            # ══════════════════════════════════════════════════════════
+            ok = False
+            uin_fmt = None
+            vid_raw = None
+            reservation = None
 
             if event_type == EVENT_BIRTH:
+                uin_raw, reservation = await mint_uin_raw(
+                    client, idem_key=comp_id, requester="bridge-poller", reserve=True)
+                if not uin_raw:
+                    state["errors"] += 1
+                    continue
+                vid_raw = await mint_vid_raw(client, uin_raw)
+                if vid_raw:
+                    state["vids_minted"] += 1
+                    state["last_vid"] = format_vid(vid_raw)
+                uin_fmt = uin_raw  # UIN stocke BRUT (norme MOSIP), affichage = VID
+
                 brn_fmt = None
                 if region_code != "XXX":
                     seq = next_brn_sequence(db, region_code, year)
@@ -617,22 +989,94 @@ async def run_cycle():
                 state["uins_minted"] += 1
                 state["last_uin"] = uin_fmt
                 log.info("BIRTH UIN %s + VID %s + BRN %s pour Patient/%s (%s)",
-                         uin_fmt, format_vid(vid_raw), brn_fmt or "-", patient_id, name or "?")
+                         uin_fmt, format_vid(vid_raw) if vid_raw else "-",
+                         brn_fmt or "-", patient_id, name or "?")
                 ok = await writeback_patient(client, patient_id, uin_fmt, brn_fmt, vid_raw=vid_raw)
-            elif event_type == EVENT_DEATH:
-                drn_fmt = None
-                if region_code != "XXX":
-                    seq = next_drn_sequence(db, region_code, year)
-                    drn_fmt = format_drn(region_code, year, seq)
-                    state["drns_reformatted"] += 1
-                    state["last_drn"] = drn_fmt
+                if ok:
+                    # l'identite derriere le numero, sinon le registre ne sait pas a qui
+                    await idrepo_create(client, uin_fmt, patient, registration_id=brn_fmt)
+                    await confirm_uin(client, reservation, "writeback ok")
                 else:
-                    log.warning("Patient/%s DEATH : region inconnue, DRN skip", patient_id)
-                state["uins_minted"] += 1
-                state["last_uin"] = uin_fmt
-                log.info("DEATH UIN %s + VID %s + DRN %s pour Patient/%s (%s)",
-                         uin_fmt, format_vid(vid_raw), drn_fmt or "-", patient_id, name or "?")
-                ok = await writeback_death(client, patient_id, uin_fmt, drn_fmt, vid_raw=vid_raw)
+                    await release_uin(client, reservation, "writeback KO")
+
+            elif event_type == EVENT_DEATH:
+                # 1) le DRN : un seul par deces (v3.5, inchange)
+                drn_fmt = None
+                prev_reg = db["iun_event_reg"].find_one({"_id": comp_id})
+                if prev_reg and prev_reg.get("regno") and str(prev_reg.get("event", "")).upper() == "DEATH":
+                    drn_fmt = str(prev_reg["regno"])
+                    state["drn_adoptions"] += 1
+                    log.info("DEATH : DRN %s adopte depuis /event-registration (Composition %s)",
+                             drn_fmt, comp_id)
+                else:
+                    drn_task = drn_from_task(task)
+                    if drn_task:
+                        drn_fmt = drn_task
+                        state["drn_adoptions"] += 1
+                        log.info("DEATH : DRN %s adopte depuis la Task (Composition %s)", drn_fmt, comp_id)
+                    elif region_code != "XXX":
+                        seq = next_drn_sequence(db, region_code, year)
+                        drn_fmt = format_drn(region_code, year, seq)
+                        state["drns_reformatted"] += 1
+                        log.info("DEATH : aucun DRN prealable, allocation sequence -> %s", drn_fmt)
+                    else:
+                        log.warning("Patient/%s DEATH : region inconnue et aucun DRN prealable, DRN skip", patient_id)
+                if drn_fmt:
+                    state["last_drn"] = drn_fmt
+
+                # 2) RESOUDRE AVANT DE FRAPPER
+                criteria = death_resolution_criteria(patient)
+                cand, verdict, cands = await resolve_identity(client, criteria)
+
+                if cand:
+                    uin_fmt = str(cand.get("uin"))
+                    cand_status = str(cand.get("status") or "ACTIVE")
+                    vid_raw = await vid_for_uin(client, uin_fmt) if cand_status == "ACTIVE" else None
+                    state["deaths_resolved"] += 1
+                    log.info("DEATH resolu (%s) : le defunt %s porte deja l'UIN %s [%s]",
+                             verdict, name or patient_id, uin_fmt, cand_status)
+                    ok = await writeback_death(client, patient_id, uin_fmt, drn_fmt, vid_raw=vid_raw)
+                    if ok:
+                        if cand_status == "ACTIVE":
+                            # le numero cesse d'etre actif, et ses VID sont revoques
+                            await idrepo_deactivate(client, uin_fmt, "deces %s" % (drn_fmt or comp_id))
+                        else:
+                            # l'identite etait deja desactivee : soit le deces a deja ete
+                            # enregistre, soit deux actes visent le meme sujet. On relie
+                            # les dossiers et on laisse l'humain trancher.
+                            state["deaths_ambiguous"] += 1
+                            record_ecart(
+                                db, "deces_deja_enregistre", comp_id, patient_id, drn_fmt,
+                                "l'identite %s est deja %s : un deces a-t-il deja ete "
+                                "enregistre pour ce sujet ?" % (uin_fmt, cand_status),
+                                criteria)
+                else:
+                    # 3) AUCUNE frappe. L'acte est numerote, l'ecart est expose.
+                    nature = {
+                        "AMBIGUOUS": "deces_ambigu",
+                        "SERVICE_UNAVAILABLE": "registre_indisponible",
+                    }.get(verdict, "deces_non_rattache")
+                    if verdict == "AMBIGUOUS":
+                        state["deaths_ambiguous"] += 1
+                    elif verdict != "SERVICE_UNAVAILABLE":
+                        state["deaths_unmatched"] += 1
+                    detail = ("verdict=%s, %d candidat(s). Le defunt n'est pas rattache a une "
+                              "identite du registre : aucun UIN n'est frappe. L'entite "
+                              "detentrice doit instruire." % (verdict, len(cands)))
+                    record_ecart(db, nature, comp_id, patient_id, drn_fmt, detail, criteria)
+                    # on ecrit quand meme le DRN : l'acte de deces reste delivrable
+                    ok = await writeback_death(client, patient_id, None, drn_fmt, vid_raw=None)
+
+                if ok and prev_reg is not None:
+                    try:
+                        db["iun_event_reg"].update_one(
+                            {"_id": comp_id},
+                            {"$set": {"uin": uin_fmt, "vid": vid_raw,
+                                      "resolution": verdict,
+                                      "reconciled_at": datetime.now(timezone.utc).isoformat()}},
+                        )
+                    except Exception as _e:
+                        log.warning("maj iun_event_reg %s KO : %s", comp_id, _e)
             else:
                 log.warning("event type inconnu : %s", event_type)
                 continue
@@ -658,8 +1102,14 @@ async def poller():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    log.info("iun-uin-bridge v3.2 demarre (DRY_RUN=%s, poll=%ss, uin=%s)",
-             DRY_RUN, POLL_INTERVAL_S, UIN_SERVICE_URL)
+    log.info("iun-uin-bridge %s demarre (DRY_RUN=%s, poll=%ss)", BRIDGE_VERSION,
+             DRY_RUN, POLL_INTERVAL_S)
+    log.info("  registre d'identite : %s", IDENTITY_SERVICE_URL)
+    log.info("  ID Repository       : %s", "actif" if IDREPO_ENABLED else "DESACTIVE")
+    log.info("  VID local           : %s", "AUTORISE (mode degrade)" if ALLOW_LOCAL_VID
+             else "interdit - le registre est le seul emetteur")
+    log.info("  reprise             : %d tentatives, disjoncteur a %d echecs (%ds)",
+             HTTP_RETRIES, CB_THRESHOLD, CB_COOLDOWN_S)
     task = asyncio.create_task(poller())
     yield
     task.cancel()
@@ -771,10 +1221,39 @@ async def event_registration(request: Request):
             log.info("/event-registration DRY_RUN : passthrough regno=%s (%s)", regno, event_code)
         else:
             if event_code == "BIRTH":
-                uin_raw = await mint_uin_raw(client)
+                # v4.0 : la cle d'idempotence est l'evenement lui-meme. Le webhook
+                # mosip-api et ce chemin ne peuvent plus frapper deux fois.
+                uin_raw, _resa = await mint_uin_raw(
+                    client, idem_key=composition_id, requester="bridge-event", reserve=False)
                 if not uin_raw:
-                    state["confirm_errors"] += 1
-                    return _boom_500("bridge IUN : mint UIN impossible (iun-uin-service injoignable)")
+                    # DEGRADATION GRACIEUSE : un enregistrement d'etat civil ne doit
+                    # jamais echouer parce que le registre d'identite ne repond pas.
+                    # On confirme l'enregistrement avec son numero d'acte ; le
+                    # reconciliateur adoptera l'UIN au prochain cycle.
+                    state["degraded_registrations"] += 1
+                    log.error("registre injoignable : enregistrement %s confirme SANS UIN, "
+                              "reconciliation differee", composition_id)
+                    if region_code != "XXX":
+                        seq = next_brn_sequence(db, region_code, year)
+                        regno = format_brn(region_code, year, seq)
+                        state["last_brn"] = regno
+                    db["iun_event_reg"].replace_one(
+                        {"_id": composition_id},
+                        {"_id": composition_id, "regno": regno, "uin": None, "vid": None,
+                         "event": event_code, "tracking_id": tracking_id,
+                         "degraded": True,
+                         "ts": datetime.now(timezone.utc).isoformat()},
+                        upsert=True,
+                    )
+                    record_ecart(db, "identite_differee", composition_id, None, regno,
+                                 "registre d'identite injoignable a l'enregistrement ; "
+                                 "l'UIN sera attribue par le reconciliateur")
+                    ok, err = await confirm_registration(client, composition_id, regno, None, auth)
+                    if not ok:
+                        state["confirm_errors"] += 1
+                        return _boom_500("bridge IUN : confirmRegistration KO : %s" % err)
+                    from fastapi.responses import Response as _Resp
+                    return _Resp(status_code=202)
                 vid_raw = await mint_vid_raw(client, uin_raw)
                 uin_fmt = uin_raw  # v3.1 : UIN stocke BRUT, jamais imprime
                 # norme MOSIP : BCID1 = VID groupe (affiche sur l'acte), BCID2 = UIN brut (interne)
@@ -832,6 +1311,24 @@ def status():
     return state
 
 
+@app.get("/ecarts")
+def ecarts(state_filter: str = "OPEN", limit: int = 100):
+    """
+    Registre des ecarts de reconciliation. Un ecart n'est pas une panne : c'est
+    un etat ou l'etat civil et le registre d'identite ne disent pas la meme
+    chose. Le bridge l'expose, il ne le tranche pas.
+    """
+    try:
+        db = get_db()
+        q = {} if state_filter in ("", "ALL") else {"state": state_filter}
+        rows = list(db["iun_ecarts"].find(q).sort("detected_at", -1).limit(int(limit)))
+        for r in rows:
+            r["id"] = r.pop("_id", None)
+        return {"count": len(rows), "state": state_filter, "ecarts": rows}
+    except Exception as exc:
+        return {"count": 0, "error": str(exc), "ecarts": []}
+
+
 @app.get("/vid-preview")
 def vid_preview():
     """Genere un VID local (test) : verifie la conformite Verhoeff."""
@@ -877,6 +1374,15 @@ try:
 except Exception as _e:
     log.warning("SVG template non trouve : %s (le endpoint /certificate/birth renverra 500)", _e)
     SVG_TEMPLATE = None
+
+# --- v3.4 : gabarit du certificat de deces (variante bridge, QR en data URI) ---
+try:
+    with open(os.path.join(os.path.dirname(__file__), "death-certificate.svg"), "r", encoding="utf-8") as _f:
+        DEATH_SVG_TEMPLATE = _f.read()
+    log.info("SVG template deces charge (%d chars)", len(DEATH_SVG_TEMPLATE))
+except Exception as _e:
+    log.warning("SVG template deces non trouve : %s (le endpoint /certificate/death renverra 500)", _e)
+    DEATH_SVG_TEMPLATE = None
 
 
 def _find_related_patient(db, composition_id, section_code):
@@ -962,6 +1468,92 @@ def _find_composition_for_patient(db, patient_id):
     for comp in db["Composition"].find({"section.entry.reference": f"Patient/{patient_id}"}):
         return comp
     return None
+
+
+_FR_MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+              "août", "septembre", "octobre", "novembre", "décembre")
+
+
+def _fr_long_date(iso_date):
+    """2026-08-19 -> 19 août 2026 (equivalent du helper handlebars frLongDate cote client)."""
+    try:
+        d = datetime.strptime(str(iso_date)[:10], "%Y-%m-%d")
+        return "%d %s %d" % (d.day, _FR_MONTHS[d.month - 1], d.year)
+    except Exception:
+        return str(iso_date or "")
+
+
+# v3.6 : libelles des lieux de deces non nommes (Location sans `name` cote OpenCRVS)
+_PLACE_LABELS = {
+    "DECEASED_USUAL_RESIDENCE": "Domicile du défunt",
+    "PRIVATE_HOME": "Domicile",
+    "OTHER": "Autre lieu",
+    "HEALTH_FACILITY": "Établissement de santé",
+}
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def _resolve_place_name(db, value):
+    """Un champ d'adresse OpenCRVS peut contenir un UUID de Location plutot qu'un libelle."""
+    v = str(value or "").strip()
+    if not v:
+        return ""
+    if _UUID_RE.match(v):
+        loc = db["Location"].find_one({"id": v})
+        return (loc.get("name") or "").strip() if loc else ""
+    return v
+
+
+def _find_place_of_death(db, comp):
+    """Section death-encounter -> Encounter -> Location : (lieu, departement, pays).
+
+    Deux formes possibles cote OpenCRVS :
+      - HEALTH_FACILITY : Location nommee, hierarchie via partOf ;
+      - DECEASED_USUAL_RESIDENCE / PRIVATE_HOME / OTHER : Location SANS nom, dont
+        address.district / address.state sont des UUID de Location.
+    """
+    facility = district = country = ""
+    if not comp:
+        return facility, district, country
+    for section in comp.get("section", []):
+        codings = (section.get("code") or {}).get("coding", [])
+        if not any(c.get("code") == "death-encounter" for c in codings):
+            continue
+        entries = section.get("entry", [])
+        if not entries or not entries[0].get("reference", "").startswith("Encounter/"):
+            break
+        enc = db["Encounter"].find_one({"id": entries[0]["reference"].split("/", 1)[1]})
+        if not enc:
+            break
+        for loc in enc.get("location", []):
+            ref = (loc.get("location") or {}).get("reference", "")
+            if not ref.startswith("Location/"):
+                continue
+            lres = db["Location"].find_one({"id": ref.split("/", 1)[1]})
+            if not lres:
+                continue
+            addr = lres.get("address") or {}
+            types = [str(x.get("code") or "") for x in ((lres.get("type") or {}).get("coding") or [])]
+
+            facility = (lres.get("name") or "").strip()
+            if not facility:
+                for t in types:
+                    if t in _PLACE_LABELS:
+                        facility = _PLACE_LABELS[t]
+                        break
+
+            # departement : l'adresse d'abord (UUID resolu), sinon le parent hierarchique
+            district = _resolve_place_name(db, addr.get("district"))
+            if not district:
+                parent_ref = ((lres.get("partOf") or {}).get("reference") or "")
+                if parent_ref.startswith("Location/"):
+                    parent = db["Location"].find_one({"id": parent_ref.split("/", 1)[1]})
+                    if parent:
+                        district = (parent.get("name") or "").strip()
+            country = str(addr.get("country") or "").strip()
+            break
+        break
+    return facility, district, country
 
 
 @app.get("/certificate/birth/{patient_id}")
@@ -1062,6 +1654,84 @@ async def render_birth_certificate(patient_id: str):
         "informantName": informant_name,
     }
     svg = SVG_TEMPLATE
+    for k, v in replacements.items():
+        svg = svg.replace("{{" + k + "}}", str(v))
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+@app.get("/certificate/death/{patient_id}")
+async def render_death_certificate(patient_id: str):
+    """v3.4 : rend l'acte de deces SVG rempli avec les donnees FHIR du Patient decede."""
+    from fastapi.responses import Response, PlainTextResponse
+    if DEATH_SVG_TEMPLATE is None:
+        return PlainTextResponse("SVG template deces absent du deployment", status_code=500)
+    db = get_db()
+    dec = db["Patient"].find_one({"id": patient_id})
+    if not dec:
+        return PlainTextResponse(f"Patient {patient_id} not found in Hearth", status_code=404)
+
+    dec_given, dec_family = _patient_display_name(dec)
+    dec_gender = {"male": "Masculin", "female": "Féminin"}.get(str(dec.get("gender", "")), str(dec.get("gender", "")))
+    death_date = str(dec.get("deceasedDateTime") or dec.get("deceasedDate") or "")[:10]
+
+    uin = drn = vid = ""
+    for ident in dec.get("identifier", []):
+        s = ident.get("system", "")
+        v = str(ident.get("value", ""))
+        if s == UIN_SYSTEM:
+            uin = v
+        elif s == DRN_SYSTEM:
+            drn = v
+        elif s == VID_SYSTEM:
+            vid = v
+    # v3.1 norme MOSIP : on AFFICHE le VID, l'UIN 10 chiffres reste interne
+    if vid:
+        uin = format_vid(vid)
+
+    comp = _find_composition_for_patient(db, patient_id)
+    spouse_given = spouse_family = ""
+    informant_given = informant_family = ""
+    reg_date = ""
+    facility = district = country = ""
+    if comp:
+        spouse = _find_related_patient(db, comp["id"], "spouse-details")
+        spouse_given, spouse_family = _patient_display_name(spouse)
+        informant = _find_informant(db, comp["id"])
+        informant_given, informant_family = _patient_display_name(informant)
+        reg_date = str((comp.get("date") or ""))[:10]
+        facility, district, country = _find_place_of_death(db, comp)
+        if not death_date:
+            death_date = reg_date
+    if str(country).strip().upper() in ("SEN", "SN", ""):
+        country = "Sénégal"
+
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    reg_office_name = "Bureau Etat Civil Dakar Plateau"
+
+    verify_url = f"https://iun-uin-cert-dev.apps.origins.heritage.africa/certificate/death/{patient_id}"
+    qr_uri = _make_qr_data_uri(verify_url)
+
+    replacements = {
+        "deceasedFirstName": dec_given,
+        "deceasedFamilyName": dec_family or "-",
+        "deceasedGender": dec_gender or "-",
+        "deceasedNationalId": uin or "-",
+        "eventDate": death_date or "-",
+        "placeOfDeathFacility": facility or "-",
+        "placeOfDeathDistrict": district or "-",
+        "placeOfDeathCountry": country,
+        "spouseFirstName": spouse_given,
+        "spouseFamilyName": spouse_family or "-",
+        "informantFirstName": informant_given,
+        "informantFamilyName": informant_family or "-",
+        "registrationNumber": drn or "-",
+        "registrationLocation": reg_office_name,
+        "registrationDate": reg_date or now_iso,
+        "certificateDate": _fr_long_date(now_iso),
+        "registrarName": "Officier d'Etat Civil",
+        "qrCodeDataUri": qr_uri,
+    }
+    svg = DEATH_SVG_TEMPLATE
     for k, v in replacements.items():
         svg = svg.replace("{{" + k + "}}", str(v))
     return Response(content=svg, media_type="image/svg+xml")
@@ -1225,27 +1895,37 @@ def records_list():
     for p in pats:
         given, family = _patient_display_name(p)
         full = f"{given} {family}".strip() or "?"
-        uin = brn = vid = ""
+        uin = brn = vid = drn = ""
         for ident in p.get("identifier", []):
             s = ident.get("system", "")
             v = str(ident.get("value", ""))
             if s == UIN_SYSTEM: uin = v
             elif s == BRN_SYSTEM: brn = v
+            elif s == DRN_SYSTEM: drn = v
             elif s == VID_SYSTEM: vid = v
         if vid:
             uin = format_vid(vid)  # v3.1 : affichage = VID
-        if brn and "-" in brn:
-            regions.add(brn.split("-", 1)[0])
+        # v3.4 : un Patient porteur d'un DRN est un acte de deces
+        regno = drn or brn
+        if regno and "-" in regno:
+            regions.add(regno.split("-", 1)[0])
         pid = p.get("id", "")
-        cert_url = f"/certificate/birth/{pid}"
-        birth_date = str(p.get("birthDate", ""))
+        if drn:
+            acte = "Décès"
+            cert_url = f"/certificate/death/{pid}"
+            event_date = str(p.get("deceasedDateTime") or "")[:10]
+        else:
+            acte = "Naissance"
+            cert_url = f"/certificate/birth/{pid}"
+            event_date = str(p.get("birthDate", ""))
         gender = {"male": "Masculin", "female": "Féminin"}.get(str(p.get("gender", "")), str(p.get("gender", "")))
         rows.append(
             f'<tr>'
             f'<td>{full}</td>'
+            f'<td>{acte}</td>'
             f'<td>{gender}</td>'
-            f'<td>{birth_date}</td>'
-            f'<td class="brn">{brn or "-"}</td>'
+            f'<td>{event_date or "-"}</td>'
+            f'<td class="brn">{regno or "-"}</td>'
             f'<td class="uin">{uin or "-"}</td>'
             f'<td><a class="btn" href="{cert_url}" target="_blank">Voir cert</a></td>'
             f'</tr>'
@@ -1276,6 +1956,6 @@ def records_list():
         .replace("{{regionsUsed}}", str(len(regions)))
         .replace("{{today}}", today)
         .replace("{{now}}", now)
-        .replace("__VERSION__", "v3.2")
+        .replace("__VERSION__", "v4.0")
     )
     return HTMLResponse(content=html)
