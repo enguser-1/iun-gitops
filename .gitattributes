@@ -1,0 +1,43 @@
+# ============================================================================
+# Normalisation des fins de ligne
+# ============================================================================
+# Sans ce fichier, chaque ecriture depuis PowerShell reecrit les fichiers en
+# CRLF : le 20/08/2026 le depot presentait 57 fichiers "modifies" pour
+# 6 319 insertions et 6 319 suppressions, sans une seule difference de
+# contenu. Le bruit rendait les vrais changements invisibles - c'est ainsi
+# que les correctifs a chaud du 19/08 ne sont jamais remontes ici.
+#
+# Regle : LF dans le depot pour tout ce que lisent Kubernetes, Kustomize et
+# les conteneurs. CRLF conserve dans la copie de travail pour ce que lit
+# PowerShell 5.1.
+# ============================================================================
+
+* text=auto eol=lf
+
+# Windows : PowerShell 5.1 et cmd attendent du CRLF (le BOM UTF-8 reste
+# obligatoire sur les .ps1, cf. note d'exploitation).
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.psd1  text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# Scripts executes dans des conteneurs Linux : LF imperatif.
+*.sh    text eol=lf
+Dockerfile text eol=lf
+
+# Binaires : ne jamais tenter de convertir.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.pdf   binary
+*.docx  binary
+*.xlsx  binary
+*.pptx  binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
