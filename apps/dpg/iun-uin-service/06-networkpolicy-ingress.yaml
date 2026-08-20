@@ -1,0 +1,68 @@
+# ============================================================================
+# NetworkPolicy ingress pour iun-uin-service — qui a le droit d'appeler
+# le registre souverain d'identite
+# ============================================================================
+# Relevee le 2026-08-20 : aucune NP d'ingress n'existait sur ce service.
+# Tant qu'il ne faisait que distribuer des numeros, l'exposition etait
+# discutable. Depuis la bascule en registre souverain (ADR-R02), il expose
+# `PATCH /idrepository/v1/identity/uin/{uin}` — donc la desactivation d'une
+# identite — et `POST /idrepository/v1/identity/search` — donc l'enumeration
+# du registre. Sans cette NP, tout pod du cluster peut les appeler.
+#
+# Regle : seuls le bridge (ns iun-opencrvs-dev) et les sondes de la
+# plateforme atteignent le port 8080.
+#
+# ATTENTION au piege documente dans [[ocp-origins-contraintes]] : le port
+# d'une NetworkPolicy est le port du POD, pas celui du Service. Ici les deux
+# valent 8080, mais ne pas generaliser.
+# ============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-registre-identite
+  namespace: iun-mosip-dev
+  labels:
+    app.kubernetes.io/part-of: iun-platform
+    iun.sn/dpg: uin-custom
+  annotations:
+    iun.sn/purpose: "Registre d'identite : n'accepter que le bridge et les sondes"
+    iun.sn/dette: "S2 — registre-de-dette-technique 2026-08-20"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: iun-uin-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. Le bridge IUN — seul appelant metier legitime a ce stade.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: iun-opencrvs-dev
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: iun-uin-bridge
+      ports:
+        - protocol: TCP
+          port: 8080
+    # 2. Supervision : scrape Prometheus et sondes de la plateforme.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+    # 3. Intra-namespace : builds, jobs de reprise, diagnostics locaux.
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+# ============================================================================
+# NON inclus volontairement : l'ingress depuis openshift-ingress (le routeur).
+# La Route publique est retiree de la kustomization par le meme changement —
+# le registre n'a aucune raison d'etre joignable depuis Internet tant qu'il
+# n'est pas place derriere 3scale avec authentification et finalite declaree
+# (dossier hub §10, arbitrage A4).
+# ============================================================================

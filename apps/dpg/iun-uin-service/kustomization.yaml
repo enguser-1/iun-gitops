@@ -1,16 +1,34 @@
 # ============================================================================
-# Kustomization iun-uin-service - sync order pour Argo CD Sprint 4
+# Kustomization iun-uin-service — registre souverain d'identite
 # ============================================================================
 # 01 - ImageStream + BuildConfig (image source-of-truth)
 # 02 - Deployment (consume ImageStreamTag)
 # 03 - Service ClusterIP 8080
-# 04 - Route OCP edge TLS (acces external)
+# 05 - NetworkPolicy egress builds (pull images base)
+# 06 - NetworkPolicy ingress (qui a le droit d'appeler le registre)
+#
+# 04-route.yaml est VOLONTAIREMENT EXCLU depuis le 2026-08-20 — cf. plus bas.
 #
 # Pre-requis namespace iun-mosip-dev :
 #   - CNPG mosip-postgres healthy (cluster.postgresql.cnpg.io/mosip-postgres)
 #   - Secret mosip-postgres-superuser (user postgres + password)
 #   - DB mosip_kernel initialisee (postgres-init fix #M2)
 #   - NetworkPolicies socle Sprint 2 (allow-dns + allow-egress-intra-mosip)
+#
+# ---------------------------------------------------------------------------
+# Pourquoi la Route est retiree
+# ---------------------------------------------------------------------------
+# Jusqu'au 2026-08-20 ce service ne faisait que distribuer des numeros, et
+# `iun-uin-dev.apps.origins.heritage.africa` l'exposait sans authentification.
+# Depuis la bascule en registre souverain (ADR-R02), il expose la lecture,
+# la mise a jour et la DESACTIVATION d'une identite. Une route publique sans
+# authentification signifie : quiconque l'atteint peut desactiver l'identite
+# d'un citoyen ou enumerer le registre.
+#
+# Le bridge appelle le Service ClusterIP — la Route ne sert a personne.
+# Elle sera retablie le jour ou le service passera derriere 3scale, avec
+# jeton, finalite declaree et journalisation (dossier hub §10, arbitrage A4).
+# Le fichier 04-route.yaml est conserve pour cette echeance, pas supprime.
 # ============================================================================
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -23,5 +41,5 @@ resources:
   - 01-imagestream-buildconfig.yaml
   - 02-deployment.yaml
   - 03-service.yaml
-  - 04-route.yaml
-  - 05-networkpolicy-builds.yaml  # egress HTTPS pour pull images base
+  - 05-networkpolicy-builds.yaml   # egress HTTPS pour pull images base
+  - 06-networkpolicy-ingress.yaml  # ingress restreint au bridge et aux sondes
