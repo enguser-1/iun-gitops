@@ -345,5 +345,16 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true   # sinon une synchronisation réécrit quand même le secret
     retry: {limit: 3, backoff: {duration: 30s, factor: 2, maxDuration: 5m}}
+  # Le chart postgres-init génère un mot de passe aléatoire (db-dbuser-password) à chaque rendu :
+  # ce secret ne doit jamais être resynchronisé, sous peine de couper l'accès de MOSIP à sa base.
+  # Sans cette exclusion, l'application reste OutOfSync en permanence (alerte ArgoCDSyncAlert).
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: db-common-secrets
+      namespace: mosip-dev
+      jsonPointers:
+        - /data
   revisionHistoryLimit: 5
